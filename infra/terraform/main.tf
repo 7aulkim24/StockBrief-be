@@ -49,11 +49,11 @@ module "rds_proxy" {
 module "agentcore_runtime" {
   source = "./modules/agentcore_runtime"
 
-  name_prefix       = local.name_prefix
-  enabled           = var.agentcore_runtime_enabled
-  container_uri     = var.agentcore_runtime_container_uri
-  network_mode      = var.agentcore_network_mode
-  subnet_ids        = var.lambda_subnet_ids
+  name_prefix        = local.name_prefix
+  enabled            = var.agentcore_runtime_enabled
+  container_uri      = var.agentcore_runtime_container_uri
+  network_mode       = var.agentcore_network_mode
+  subnet_ids         = var.lambda_subnet_ids
   security_group_ids = var.lambda_security_group_ids
   environment_variables = {
     APP_ENV      = var.environment

@@ -1,6 +1,6 @@
 locals {
-  enabled = var.enabled && var.container_uri != ""
-  runtime_name = replace("${var.name_prefix}_agent", "-", "_")
+  enabled       = var.enabled && var.container_uri != ""
+  runtime_name  = replace("${var.name_prefix}_agent", "-", "_")
   endpoint_name = replace("${var.name_prefix}_default", "-", "_")
 
   network_configuration = var.network_mode == "VPC" ? {
@@ -10,7 +10,8 @@ locals {
       Subnets        = var.subnet_ids
     }
     } : {
-    NetworkMode = "PUBLIC"
+    NetworkMode       = "PUBLIC"
+    NetworkModeConfig = null
   }
 }
 

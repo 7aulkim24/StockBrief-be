@@ -153,5 +153,5 @@ def test_unknown_candidate_returns_common_error_response(
     response = seeded_api_client.get("/v1/recommendations/candidates/999999")
 
     assert response.status_code == 404
-    assert response.json()["error"]["code"] == "not_found"
-
+    assert response.json()["success"] is False
+    assert response.json()["error"]["code"] == "STOCK_NOT_FOUND"

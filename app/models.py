@@ -8,6 +8,8 @@ class HealthResponse(BaseModel):
     status: str = Field(examples=["ok"])
     service: str = Field(examples=["stockbrief-api"])
     version: str = Field(examples=["0.1.0"])
+    environment: str = Field(examples=["local"])
+    time: datetime
 
 
 class ServicePolicyResponse(BaseModel):
@@ -35,11 +37,185 @@ class ServicePolicyResponse(BaseModel):
 class ErrorDetail(BaseModel):
     code: str = Field(examples=["not_found"])
     message: str = Field(examples=["The requested resource was not found."])
-    details: dict[str, object] | None = None
+    details: dict[str, object] | list[dict[str, object]] | None = None
 
 
 class ErrorResponse(BaseModel):
     error: ErrorDetail
+
+
+class ApiErrorResponse(BaseModel):
+    success: Literal[False] = False
+    error: ErrorDetail
+    request_id: str
+
+
+class PaginationResponse(BaseModel):
+    limit: int
+    offset: int
+    total: int
+    has_more: bool
+
+
+class StockSearchContractItem(BaseModel):
+    ticker: str
+    name: str
+    market: str
+    sector: str | None
+    corp_code: str | None
+    match_reason: str
+
+
+class StockSearchContractData(BaseModel):
+    items: list[StockSearchContractItem]
+    pagination: PaginationResponse
+
+
+class StockSearchContractResponse(BaseModel):
+    success: Literal[True] = True
+    data: StockSearchContractData
+    message: str
+    request_id: str
+
+
+class StockContractItem(BaseModel):
+    ticker: str
+    name: str
+    market: str
+    sector: str | None
+    corp_code: str | None
+
+
+class StockPriceContract(BaseModel):
+    close: float | None
+    change_rate: float | None
+    volume: float | None
+    trade_date: date | None
+
+
+class StockScoreBreakdownContract(BaseModel):
+    momentum: float
+    liquidity: float
+    disclosure: float
+    news: float
+
+
+class StockScoreContract(BaseModel):
+    total: float
+    grade: str
+    as_of: date
+    version: str
+    breakdown: StockScoreBreakdownContract
+
+
+class CandidateEvidenceSummaryContract(BaseModel):
+    news_count: int
+    disclosure_count: int
+    latest_at: datetime | None
+
+
+class StockCandidateContractItem(BaseModel):
+    ticker: str
+    name: str
+    market: str
+    sector: str | None
+    score: StockScoreContract
+    price: StockPriceContract | None
+    evidence_summary: CandidateEvidenceSummaryContract
+
+
+class StockCandidateContractData(BaseModel):
+    as_of: date
+    items: list[StockCandidateContractItem]
+    pagination: PaginationResponse
+
+
+class StockCandidateContractResponse(BaseModel):
+    success: Literal[True] = True
+    data: StockCandidateContractData
+    message: str
+    request_id: str
+
+
+class StockBriefContract(BaseModel):
+    summary: str
+    risk_notes: list[str]
+    as_of: date
+
+
+class EvidencePreviewContract(BaseModel):
+    id: str
+    source_type: str
+    title: str
+    source_name: str
+    url: str | None = None
+    published_at: datetime | None = None
+
+
+class StockDetailContractData(BaseModel):
+    stock: StockContractItem
+    price: StockPriceContract | None
+    score: StockScoreContract
+    brief: StockBriefContract
+    evidence_preview: list[EvidencePreviewContract]
+
+
+class StockDetailContractResponse(BaseModel):
+    success: Literal[True] = True
+    data: StockDetailContractData
+    message: str
+    request_id: str
+
+
+class StockEvidenceContractItem(BaseModel):
+    id: str
+    source_type: str
+    title: str
+    source_name: str
+    url: str | None = None
+    published_at: datetime | None = None
+    snippet: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StockEvidenceContractData(BaseModel):
+    ticker: str
+    items: list[StockEvidenceContractItem]
+    pagination: PaginationResponse
+
+
+class StockEvidenceContractResponse(BaseModel):
+    success: Literal[True] = True
+    data: StockEvidenceContractData
+    message: str
+    request_id: str
+
+
+class ChatCitationContract(BaseModel):
+    id: str
+    source_type: str
+    title: str
+    url: str | None = None
+    published_at: datetime | None = None
+
+
+class ChatSafetyContract(BaseModel):
+    policy_action: str
+    disclaimer: str
+
+
+class ChatContractData(BaseModel):
+    session_id: str
+    answer: str
+    citations: list[ChatCitationContract]
+    safety: ChatSafetyContract
+
+
+class ChatContractResponse(BaseModel):
+    success: Literal[True] = True
+    data: ChatContractData
+    message: str
+    request_id: str
 
 
 RiskProfile = Literal["conservative", "balanced", "aggressive"]

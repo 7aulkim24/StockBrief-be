@@ -38,15 +38,17 @@ def test_chat_allowed_answer_uses_candidate_evidence_and_risks(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["policy_status"] == "allowed"
-    assert "추천 후보 점수" in payload["answer"]
-    assert "주요 추천 이유" in payload["answer"]
-    assert "연결된 근거 요약" in payload["answer"]
-    assert "리스크/확인 필요 사항" in payload["answer"]
-    assert payload["citations"]
-    assert payload["used_evidence_ids"]
-    assert {citation["evidence_id"] for citation in payload["citations"]} == set(
-        payload["used_evidence_ids"]
+    assert payload["success"] is True
+    assert payload["message"] == "mock Agent 응답을 반환했습니다."
+    data = payload["data"]
+    assert data["safety"]["policy_action"] == "ALLOW"
+    assert "추천 후보 점수" in data["answer"]
+    assert "주요 추천 이유" in data["answer"]
+    assert "연결된 근거 요약" in data["answer"]
+    assert "리스크/확인 필요 사항" in data["answer"]
+    assert data["citations"]
+    assert {"id", "source_type", "title", "url", "published_at"}.issubset(
+        data["citations"][0]
     )
 
 
@@ -58,9 +60,10 @@ def test_chat_redirects_trade_decision_request(seeded_api_client: TestClient) ->
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["policy_status"] == "redirected"
-    assert "직접 답하지 않습니다" in payload["answer"]
-    assert payload["citations"]
+    data = payload["data"]
+    assert data["safety"]["policy_action"] == "REDIRECT"
+    assert "직접 답하지 않습니다" in data["answer"]
+    assert data["citations"]
 
 
 def test_chat_redirects_target_entry_and_stop_requests(
@@ -78,7 +81,7 @@ def test_chat_redirects_target_entry_and_stop_requests(
         )
 
         assert response.status_code == 200
-        assert response.json()["policy_status"] == "redirected"
+        assert response.json()["data"]["safety"]["policy_action"] == "REDIRECT"
 
 
 def test_chat_blocks_or_redirects_return_certainty_request(
@@ -91,8 +94,8 @@ def test_chat_blocks_or_redirects_return_certainty_request(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["policy_status"] in {"blocked", "redirected"}
-    assert "답할 수 없습니다" in payload["answer"]
+    assert payload["data"]["safety"]["policy_action"] in {"BLOCK", "REDIRECT"}
+    assert "답할 수 없습니다" in payload["data"]["answer"]
 
 
 def test_chat_says_evidence_is_insufficient_when_evidence_is_weak(
@@ -118,10 +121,9 @@ def test_chat_says_evidence_is_insufficient_when_evidence_is_weak(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["policy_status"] == "allowed"
-    assert "근거가 부족" in payload["answer"]
-    assert payload["citations"] == []
-    assert payload["used_evidence_ids"] == []
+    assert payload["data"]["safety"]["policy_action"] == "ALLOW"
+    assert "근거가 부족" in payload["data"]["answer"]
+    assert payload["data"]["citations"] == []
 
 
 def test_chat_response_does_not_emit_prohibited_korean_terms(
@@ -156,4 +158,4 @@ def test_chat_openapi_documents_response_model(
     schema = response.json()["paths"]["/v1/chat"]["post"]["responses"]["200"][
         "content"
     ]["application/json"]["schema"]
-    assert "ChatResponse" in schema["$ref"]
+    assert "ChatContractResponse" in schema["$ref"]

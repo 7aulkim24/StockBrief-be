@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -7,19 +8,26 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import Settings, get_settings
-from app.models import ErrorDetail, ErrorResponse
+from app.models import ApiErrorResponse, ErrorDetail
 from app.protected_routes import router as protected_router
 from app.routes import router
 
 
 def _error_response(
+    request: Request,
     status_code: int,
     code: str,
     message: str,
-    details: dict[str, object] | None = None,
+    details: dict[str, object] | list[dict[str, object]] | None = None,
 ) -> JSONResponse:
-    payload = ErrorResponse(
-        error=ErrorDetail(code=code, message=message, details=details)
+    request_id = request.headers.get("x-request-id") or getattr(
+        request.state,
+        "request_id",
+        f"req_{uuid.uuid4().hex}",
+    )
+    payload = ApiErrorResponse(
+        error=ErrorDetail(code=code, message=message, details=details),
+        request_id=request_id,
     )
     return JSONResponse(status_code=status_code, content=payload.model_dump())
 
@@ -42,27 +50,52 @@ def create_app(settings_factory: Callable[[], Settings] = get_settings) -> FastA
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next: Callable):
+        request.state.request_id = request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex}"
+        response = await call_next(request)
+        response.headers["x-request-id"] = request.state.request_id
+        return response
+
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
         request: Request,
         exc: StarletteHTTPException,
     ) -> JSONResponse:
-        _ = request
-        code = "not_found" if exc.status_code == 404 else "http_error"
-        message = str(exc.detail) if exc.detail else "HTTP error occurred."
-        return _error_response(status_code=exc.status_code, code=code, message=message)
+        details = None
+        if isinstance(exc.detail, dict):
+            code = str(exc.detail.get("code", "INVALID_REQUEST"))
+            message = str(exc.detail.get("message", "HTTP error occurred."))
+            raw_details = exc.detail.get("details")
+            details = raw_details if isinstance(raw_details, list | dict) else None
+        else:
+            code = "STOCK_NOT_FOUND" if exc.status_code == 404 else "INVALID_REQUEST"
+            message = str(exc.detail) if exc.detail else "HTTP error occurred."
+        return _error_response(
+            request=request,
+            status_code=exc.status_code,
+            code=code,
+            message=message,
+            details=details,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
-        _ = request
         return _error_response(
-            status_code=422,
-            code="validation_error",
+            request=request,
+            status_code=400,
+            code="INVALID_REQUEST",
             message="Request validation failed.",
-            details={"errors": exc.errors()},
+            details=[
+                {
+                    "field": ".".join(str(part) for part in error["loc"]),
+                    "reason": str(error["type"]),
+                }
+                for error in exc.errors()
+            ],
         )
 
     app.include_router(router, prefix=settings.api_base_path)

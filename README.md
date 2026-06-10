@@ -35,6 +35,12 @@ cp .env.example .env
 # .env에서 DATABASE_URL, OPENDART_API_KEY 등 설정
 ```
 
+로컬 PostgreSQL 실행:
+
+```bash
+docker compose up -d postgres
+```
+
 ## 서버 실행
 
 ```bash
@@ -64,6 +70,13 @@ alembic downgrade -1
 ```bash
 alembic upgrade head
 python -m app.seed.seed_mock_data
+```
+
+로컬 API 확인:
+
+```bash
+curl http://127.0.0.1:8000/v1/health
+curl "http://127.0.0.1:8000/v1/recommendations/candidates?limit=3"
 ```
 
 ## 테스트

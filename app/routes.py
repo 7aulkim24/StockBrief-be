@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -321,8 +321,8 @@ def get_stock_evidence(
     request: Request,
     ticker: str,
     source_type: str | None = Query(default=None, pattern="^(NEWS|DISCLOSURE|SCORE|CHUNK)$"),
-    from_date: str | None = None,
-    to_date: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_db_session),
@@ -377,7 +377,11 @@ def chat(
 
 
 def _request_id(request: Request) -> str:
-    return request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex}"
+    return (
+        getattr(request.state, "request_id", None)
+        or request.headers.get("x-request-id")
+        or f"req_{uuid.uuid4().hex}"
+    )
 
 
 def _validate_ticker(ticker: str) -> None:
@@ -570,21 +574,19 @@ def _contract_source_type_filter(source_type: str | None) -> set[str]:
 def _filter_evidence_dates(
     evidence: list[StockEvidenceItemResponse],
     *,
-    from_date: str | None,
-    to_date: str | None,
+    from_date: date | None,
+    to_date: date | None,
 ) -> list[StockEvidenceItemResponse]:
     if from_date is None and to_date is None:
         return evidence
-    from_value = datetime.fromisoformat(from_date).date() if from_date else None
-    to_value = datetime.fromisoformat(to_date).date() if to_date else None
     filtered = []
     for item in evidence:
         item_date = item.as_of_date or (item.published_at.date() if item.published_at else None)
         if item_date is None:
             continue
-        if from_value and item_date < from_value:
+        if from_date and item_date < from_date:
             continue
-        if to_value and item_date > to_value:
+        if to_date and item_date > to_date:
             continue
         filtered.append(item)
     return filtered

@@ -71,6 +71,34 @@ def test_invalid_ticker_returns_contract_error(seeded_api_client: TestClient) ->
     assert payload["request_id"].startswith("req_")
 
 
+def test_contract_response_request_id_matches_header(
+    seeded_api_client: TestClient,
+) -> None:
+    response = seeded_api_client.get(
+        "/v1/stocks/005930/evidence",
+        headers={"x-request-id": "req_test_correlation"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["x-request-id"] == "req_test_correlation"
+    assert response.json()["request_id"] == "req_test_correlation"
+
+
+def test_invalid_evidence_date_returns_contract_error(
+    seeded_api_client: TestClient,
+) -> None:
+    response = seeded_api_client.get(
+        "/v1/stocks/005930/evidence",
+        params={"from_date": "not-a-date"},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "INVALID_REQUEST"
+    assert payload["request_id"].startswith("req_")
+
+
 def test_stock_evidence_returns_all_seeded_evidence_types(
     seeded_api_client: TestClient,
 ) -> None:

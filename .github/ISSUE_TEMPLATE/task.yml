@@ -1,6 +1,6 @@
 name: 작업
-description: 기능, 버그, 설정 등 일반 작업
-title: "[BE] "
+description: 설정, 문서, 리팩토링, 일반 작업
+title: "[BE] chore: "
 labels: []
 body:
   - type: textarea
@@ -10,10 +10,19 @@ body:
     validations:
       required: true
   - type: textarea
+    id: scope
+    attributes:
+      label: 범위
+      placeholder: 포함/제외 항목을 적는다
+    validations:
+      required: true
+  - type: textarea
     id: done
     attributes:
       label: 완료 기준
       value: |
-        - 
+        - 변경 목적이 1개로 제한됨
+        - 관련 테스트 또는 검증 수행
+        - README / .env.example / 문서 갱신 필요 여부 확인
     validations:
       required: true

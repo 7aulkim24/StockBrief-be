@@ -1,0 +1,38 @@
+name: 기능
+description: 새 API, 서비스, 인프라, 정책 변경
+title: "[BE] feat: "
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 기능 요약
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: 사용자/제품 가치
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 범위
+      placeholder: 포함/제외 항목을 적는다
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 기준
+      value: |
+        - 구현 완료
+        - 테스트 통과
+        - API 계약 또는 문서 반영
+    validations:
+      required: true
+  - type: textarea
+    id: deps
+    attributes:
+      label: 의존 이슈
+      placeholder: #123, #124

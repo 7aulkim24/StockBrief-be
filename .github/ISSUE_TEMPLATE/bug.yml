@@ -1,0 +1,51 @@
+name: 버그
+description: 동작 오류, 회귀, 실패 케이스
+title: "[BE] fix: "
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 문제 요약
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 동작
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 동작
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 재현 방법
+      placeholder: 1. ...
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 기준
+      value: |
+        - 실패 원인 수정
+        - 회귀 테스트 추가
+        - 관련 문서 갱신
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영향 범위
+      options:
+        - API
+        - DB
+        - 배포/인프라
+        - 테스트
+        - 문서
+    validations:
+      required: true

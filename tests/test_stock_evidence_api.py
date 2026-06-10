@@ -1,11 +1,12 @@
 from collections.abc import Mapping
+from decimal import Decimal
 from typing import Any
 
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.orm import EvidenceChunk, FinancialStatement, PriceMetric
+from app.orm import EvidenceChunk, FinancialStatement, PriceMetric, RecommendationScore, RiskSignal
 
 
 PROHIBITED_KOREAN_TERMS = [
@@ -33,11 +34,15 @@ def test_stock_search_returns_seeded_stocks(seeded_api_client: TestClient) -> No
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["query"] == "삼성"
-    assert payload["count"] >= 2
-    assert {"ticker", "name", "market", "sector", "industry"}.issubset(
-        payload["items"][0]
+    assert payload["success"] is True
+    assert payload["message"] == "종목 검색 결과를 반환했습니다."
+    assert payload["request_id"].startswith("req_")
+    data = payload["data"]
+    assert data["pagination"]["total"] >= 2
+    assert {"ticker", "name", "market", "sector", "corp_code", "match_reason"}.issubset(
+        data["items"][0]
     )
+    assert data["items"][0]["match_reason"] in {"name", "ticker", "keyword", "default"}
 
 
 def test_stock_detail_returns_identifiers(seeded_api_client: TestClient) -> None:
@@ -45,12 +50,91 @@ def test_stock_detail_returns_identifiers(seeded_api_client: TestClient) -> None
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["ticker"] == "005930"
-    assert payload["name"] == "삼성전자"
-    assert {
-        (identifier["provider"], identifier["identifier_type"])
-        for identifier in payload["identifiers"]
-    } == {("OpenDART", "corp_code"), ("OpenDART", "stock_code")}
+    assert payload["success"] is True
+    data = payload["data"]
+    assert data["stock"]["ticker"] == "005930"
+    assert data["stock"]["name"] == "삼성전자"
+    assert data["stock"]["corp_code"] == "MOCK00126380"
+    assert {"stock", "price", "score", "brief", "evidence_preview"}.issubset(data)
+    assert {"total", "grade", "as_of", "version", "breakdown"}.issubset(data["score"])
+
+
+def test_stock_candidates_respect_risk_profile_sorting(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    score = seeded_session.scalars(
+        select(RecommendationScore).where(RecommendationScore.ticker == "005930")
+    ).one()
+    for index in range(5):
+        seeded_session.add(
+            RiskSignal(
+                ticker="005930",
+                as_of_date=score.as_of_date,
+                risk_tag=f"extra_review_risk_{index}",
+                severity="medium",
+                penalty_points=Decimal("1.00"),
+                display_text="추가 리스크 확인이 필요합니다.",
+                description="추가 리스크 확인이 필요합니다.",
+                evidence_ids=[],
+            )
+        )
+    seeded_session.commit()
+
+    aggressive = seeded_api_client.get(
+        "/v1/stocks/candidates",
+        params={"risk_profile": "aggressive", "limit": 1},
+    )
+    conservative = seeded_api_client.get(
+        "/v1/stocks/candidates",
+        params={"risk_profile": "conservative", "limit": 1},
+    )
+
+    assert aggressive.status_code == 200
+    assert conservative.status_code == 200
+    assert aggressive.json()["data"]["items"][0]["ticker"] == "005930"
+    assert conservative.json()["data"]["items"][0]["ticker"] != "005930"
+
+
+def test_invalid_ticker_returns_contract_error(seeded_api_client: TestClient) -> None:
+    response = seeded_api_client.get("/v1/stocks/ABC/evidence")
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "INVALID_TICKER"
+    assert payload["error"]["details"] == [
+        {"field": "ticker", "reason": "invalid_format"}
+    ]
+    assert payload["request_id"].startswith("req_")
+
+
+def test_contract_response_request_id_matches_header(
+    seeded_api_client: TestClient,
+) -> None:
+    response = seeded_api_client.get(
+        "/v1/stocks/005930/evidence",
+        headers={"x-request-id": "req_test_correlation"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["x-request-id"] == "req_test_correlation"
+    assert response.json()["request_id"] == "req_test_correlation"
+
+
+def test_invalid_evidence_date_returns_contract_error(
+    seeded_api_client: TestClient,
+) -> None:
+    response = seeded_api_client.get(
+        "/v1/stocks/005930/evidence",
+        params={"from_date": "not-a-date"},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "INVALID_REQUEST"
+    assert payload["request_id"].startswith("req_")
 
 
 def test_stock_evidence_returns_all_seeded_evidence_types(
@@ -60,36 +144,36 @@ def test_stock_evidence_returns_all_seeded_evidence_types(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["ticker"] == "005930"
-    assert payload["message"] is None
-    evidence_types = {item["type"] for item in payload["evidence"]}
-    assert {"financial", "news", "disclosure", "price"}.issubset(evidence_types)
+    assert payload["success"] is True
+    assert payload["message"] == "근거 목록을 반환했습니다."
+    data = payload["data"]
+    assert data["ticker"] == "005930"
+    evidence_types = {item["source_type"] for item in data["items"]}
+    assert {"SCORE", "NEWS", "DISCLOSURE"}.issubset(evidence_types)
 
-    for item in payload["evidence"]:
+    for item in data["items"]:
         assert {
             "id",
-            "type",
+            "source_type",
             "title",
-            "summary",
             "source_name",
-            "source_url",
-            "source_identifier",
+            "url",
             "published_at",
-            "as_of_date",
-            "data_status",
+            "snippet",
+            "metadata",
         }.issubset(item)
 
 
 def test_stock_evidence_type_filter_and_limit(seeded_api_client: TestClient) -> None:
     response = seeded_api_client.get(
         "/v1/stocks/005930/evidence",
-        params={"types": "news,price", "limit": 2},
+        params={"source_type": "NEWS", "limit": 2},
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert len(payload["evidence"]) == 2
-    assert {item["type"] for item in payload["evidence"]}.issubset({"news", "price"})
+    data = response.json()["data"]
+    assert len(data["items"]) <= 2
+    assert {item["source_type"] for item in data["items"]}.issubset({"NEWS"})
 
 
 def test_price_evidence_has_source_identifier_when_url_is_missing(
@@ -97,16 +181,22 @@ def test_price_evidence_has_source_identifier_when_url_is_missing(
 ) -> None:
     response = seeded_api_client.get(
         "/v1/stocks/005930/evidence",
-        params={"types": "price"},
+        params={"source_type": "SCORE"},
     )
 
     assert response.status_code == 200
-    evidence = response.json()["evidence"]
+    evidence = response.json()["data"]["items"]
     assert evidence
-    assert evidence[0]["source_url"] is None
-    assert evidence[0]["source_name"] == "KRX_FALLBACK_MOCK"
-    assert evidence[0]["source_identifier"]
-    assert evidence[0]["data_status"] == "fallback"
+    price_items = [
+        item
+        for item in evidence
+        if item["id"].startswith("price_")
+    ]
+    assert price_items
+    assert price_items[0]["url"] is None
+    assert price_items[0]["source_name"] == "KRX_FALLBACK_MOCK"
+    assert price_items[0]["metadata"]["source_identifier"]
+    assert price_items[0]["metadata"]["data_status"] == "fallback"
 
 
 def test_stock_evidence_empty_result_has_clear_message(
@@ -124,8 +214,10 @@ def test_stock_evidence_empty_result_has_clear_message(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["evidence"] == []
-    assert payload["message"] == "요청한 조건에서 확인 가능한 근거 데이터가 충분하지 않습니다."
+    assert payload["success"] is True
+    assert payload["data"]["items"] == []
+    assert payload["data"]["pagination"]["total"] == 0
+    assert payload["message"] == "근거 목록을 반환했습니다."
 
 
 def test_recommendation_reason_evidence_ids_link_to_evidence_api(
@@ -139,7 +231,7 @@ def test_recommendation_reason_evidence_ids_link_to_evidence_api(
         for reason in candidate["recommendation_reasons"]
         for evidence_id in reason["evidence_ids"]
     }
-    evidence_api_ids = {item["id"] for item in evidence["evidence"]}
+    evidence_api_ids = {item["id"] for item in evidence["data"]["items"]}
     assert reason_evidence_ids
     assert reason_evidence_ids.issubset(evidence_api_ids)
 
@@ -152,20 +244,20 @@ def test_stock_evidence_openapi_documents_response_model(
     assert response.status_code == 200
     paths = response.json()["paths"]
     assert (
-        "StockSearchResponse"
-        in paths["/v1/stocks/search"]["get"]["responses"]["200"]["content"][
-            "application/json"
-        ]["schema"]["$ref"]
+            "StockSearchContractResponse"
+            in paths["/v1/stocks/search"]["get"]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"]["$ref"]
     )
     assert (
-        "StockDetailResponse"
-        in paths["/v1/stocks/{ticker}"]["get"]["responses"]["200"]["content"][
-            "application/json"
-        ]["schema"]["$ref"]
+            "StockDetailContractResponse"
+            in paths["/v1/stocks/{ticker}"]["get"]["responses"]["200"]["content"][
+                "application/json"
+            ]["schema"]["$ref"]
     )
     assert (
-        "StockEvidenceResponse"
-        in paths["/v1/stocks/{ticker}/evidence"]["get"]["responses"]["200"][
+            "StockEvidenceContractResponse"
+            in paths["/v1/stocks/{ticker}/evidence"]["get"]["responses"]["200"][
             "content"
         ]["application/json"]["schema"]["$ref"]
     )
@@ -183,4 +275,3 @@ def test_stock_evidence_responses_do_not_emit_prohibited_terms(
 
     for term in PROHIBITED_KOREAN_TERMS:
         assert term not in text
-

@@ -31,17 +31,20 @@ def _text_values(values: Iterable[object]) -> str:
 def test_seeded_session_fixture_loads_mvp_vertical_flow_data(
     seeded_session: Session,
 ) -> None:
-    assert _count(seeded_session, Stock) == 10
-    assert _count(seeded_session, CompanyIdentifier) == 20
-    assert _count(seeded_session, FinancialStatement) == 10
-    assert _count(seeded_session, Disclosure) == 10
-    assert _count(seeded_session, NewsItem) == 10
-    assert _count(seeded_session, PriceMetric) == 10
-    assert _count(seeded_session, SourceDocument) == 20
-    assert _count(seeded_session, EvidenceChunk) == 20
-    assert _count(seeded_session, RiskSignal) == 10
-    assert _count(seeded_session, RecommendationScore) == 10
-    assert _count(seeded_session, RecommendationReason) == 10
+    seed_stock_count = len(MOCK_STOCKS)
+
+    assert seed_stock_count >= 30
+    assert _count(seeded_session, Stock) == seed_stock_count
+    assert _count(seeded_session, CompanyIdentifier) == seed_stock_count * 2
+    assert _count(seeded_session, FinancialStatement) == seed_stock_count
+    assert _count(seeded_session, Disclosure) == seed_stock_count
+    assert _count(seeded_session, NewsItem) == seed_stock_count
+    assert _count(seeded_session, PriceMetric) == seed_stock_count
+    assert _count(seeded_session, SourceDocument) == seed_stock_count * 2
+    assert _count(seeded_session, EvidenceChunk) == seed_stock_count * 2
+    assert _count(seeded_session, RiskSignal) == seed_stock_count
+    assert _count(seeded_session, RecommendationScore) == seed_stock_count
+    assert _count(seeded_session, RecommendationReason) == seed_stock_count
 
 
 def test_seed_includes_opendart_corp_code_and_stock_code(
@@ -73,10 +76,12 @@ def test_seeded_candidates_pass_evidence_gate_inputs(seeded_session: Session) ->
 def test_seed_is_idempotent(seeded_session: Session) -> None:
     seed_mock_data(seeded_session)
 
-    assert _count(seeded_session, Stock) == 10
-    assert _count(seeded_session, CompanyIdentifier) == 20
-    assert _count(seeded_session, RecommendationScore) == 10
-    assert _count(seeded_session, RecommendationReason) == 10
+    seed_stock_count = len(MOCK_STOCKS)
+
+    assert _count(seeded_session, Stock) == seed_stock_count
+    assert _count(seeded_session, CompanyIdentifier) == seed_stock_count * 2
+    assert _count(seeded_session, RecommendationScore) == seed_stock_count
+    assert _count(seeded_session, RecommendationReason) == seed_stock_count
 
 
 def test_seed_user_facing_copy_uses_review_candidate_tone(
@@ -96,4 +101,3 @@ def test_seed_user_facing_copy_uses_review_candidate_tone(
     assert "공개 데이터 기준 검토 포인트" in text
     for prohibited in ["매수", "매도", "목표가", "진입가", "손절가", "수익 보장", "확실", "무조건"]:
         assert prohibited not in text
-

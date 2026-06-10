@@ -38,12 +38,10 @@ RECOMMENDATION_CANDIDATE_REQUIRED_FIELDS = {
 }
 
 CHAT_RESPONSE_REQUIRED_FIELDS = {
-    "answer",
-    "citations",
-    "session_id",
-    "message_id",
-    "policy_status",
-    "used_evidence_ids",
+    "success",
+    "data",
+    "message",
+    "request_id",
 }
 
 
@@ -81,11 +79,14 @@ def test_chat_response_schema_required_fields_snapshot(
     response = seeded_api_client.get("/v1/openapi.json")
 
     assert response.status_code == 200
-    schema = response.json()["components"]["schemas"]["ChatResponse"]
+    schemas = response.json()["components"]["schemas"]
+    schema = schemas["ChatContractResponse"]
     assert set(schema["properties"]) >= CHAT_RESPONSE_REQUIRED_FIELDS
-    assert set(schema["required"]) >= {"answer", "policy_status"}
-    assert schema["properties"]["policy_status"]["enum"] == [
-        "allowed",
-        "redirected",
-        "blocked",
-    ]
+    assert set(schema["required"]) >= {"data", "message", "request_id"}
+    data_schema = schemas["ChatContractData"]
+    assert set(data_schema["properties"]) >= {
+        "session_id",
+        "answer",
+        "citations",
+        "safety",
+    }

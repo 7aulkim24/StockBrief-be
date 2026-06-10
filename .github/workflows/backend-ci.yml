@@ -25,6 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Verify repository contract files
+        run: test -f .env.example
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

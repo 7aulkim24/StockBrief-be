@@ -10,11 +10,12 @@ def test_health() -> None:
     response = client.get("/v1/health")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok",
-        "service": "stockbrief-api",
-        "version": "0.1.0",
-    }
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["service"] == "stockbrief-api"
+    assert payload["version"] == "0.1.0"
+    assert payload["environment"] == "local"
+    assert payload["time"]
 
 
 def test_service_policy() -> None:
@@ -40,12 +41,13 @@ def test_not_found_uses_common_error_response() -> None:
     response = client.get("/v1/missing")
 
     assert response.status_code == 404
-    assert response.json() == {
-        "error": {
-            "code": "not_found",
-            "message": "Not Found",
-            "details": None,
-        }
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["request_id"].startswith("req_")
+    assert payload["error"] == {
+        "code": "STOCK_NOT_FOUND",
+        "message": "Not Found",
+        "details": None,
     }
 
 
@@ -80,6 +82,6 @@ def test_openapi_documents_common_error_response() -> None:
 
     assert response.status_code == 200
     health_responses = response.json()["paths"]["/v1/health"]["get"]["responses"]
-    assert "ErrorResponse" in health_responses["404"]["content"]["application/json"][
+    assert "ApiErrorResponse" in health_responses["404"]["content"]["application/json"][
         "schema"
     ]["$ref"]

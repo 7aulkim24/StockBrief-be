@@ -54,7 +54,8 @@ def test_protected_me_requires_auth(seeded_api_client: TestClient) -> None:
     response = seeded_api_client.get("/v1/me")
 
     assert response.status_code == 401
-    assert response.json()["error"]["code"] == "http_error"
+    assert response.json()["success"] is False
+    assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_cognito_claims_upsert_user_without_password_storage(seeded_session: Session) -> None:
@@ -134,7 +135,8 @@ def test_patch_me_rejects_client_supplied_user_id(
             json={"nickname": "researcher", "user_id": "malicious-user-id"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "INVALID_REQUEST"
     finally:
         app.dependency_overrides.clear()
 
@@ -318,11 +320,10 @@ def test_authenticated_chat_persists_session_and_messages(seeded_session: Sessio
 
         assert response.status_code == 200
         payload = response.json()
-        assert payload["session_id"]
-        assert payload["message_id"]
+        assert payload["data"]["session_id"]
         assert client.get("/v1/me/chat-sessions").json()["count"] == 1
         messages = seeded_session.scalars(
-            select(ChatMessage).where(ChatMessage.session_id == payload["session_id"])
+            select(ChatMessage).where(ChatMessage.session_id == payload["data"]["session_id"])
         ).all()
         assert [message.role for message in messages] == ["user", "assistant"]
     finally:

@@ -98,6 +98,18 @@ def create_app(settings_factory: Callable[[], Settings] = get_settings) -> FastA
             ],
         )
 
+    @app.exception_handler(Exception)
+    async def global_exception_handler(
+        request: Request,
+        exc: Exception,
+    ) -> JSONResponse:
+        return _error_response(
+            request=request,
+            status_code=500,
+            code="INTERNAL_SERVER_ERROR",
+            message="Internal server error.",
+        )
+
     app.include_router(router, prefix=settings.api_base_path)
     app.include_router(protected_router, prefix=settings.api_base_path)
     return app

@@ -47,6 +47,12 @@ Do not run `terraform apply` until AWS account, networking, repository connectio
    ./scripts/package_api_lambda.sh
    ```
 
+   The script defaults `PYTHON_BIN` to `python3.13` to match `requires-python = ">=3.13"` in `pyproject.toml` and the `python3.13` Lambda runtime. If your system resolves a different interpreter as `python3.13`, override the variable explicitly:
+
+   ```bash
+   PYTHON_BIN=/usr/local/bin/python3.13 ./scripts/package_api_lambda.sh
+   ```
+
 2. Create a local dev tfvars file from the example:
 
    ```bash

@@ -12,6 +12,7 @@ resource "aws_amplify_app" "web" {
     NEXT_PUBLIC_COGNITO_APP_CLIENT_ID    = var.cognito_app_client_id
     NEXT_PUBLIC_COGNITO_HOSTED_UI_DOMAIN = var.cognito_hosted_ui_domain
     NEXT_PUBLIC_COGNITO_REDIRECT_URI     = var.cognito_redirect_uri
+    _NODE_VERSION                        = "24"
   }
 
   build_spec = <<-YAML

@@ -30,7 +30,7 @@ variable "api_lambda_package_path" {
 variable "api_lambda_runtime" {
   description = "Python runtime for Lambda."
   type        = string
-  default     = "python3.12"
+  default     = "python3.13"
 }
 
 variable "api_lambda_timeout_seconds" {

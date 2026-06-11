@@ -71,6 +71,27 @@ Score engine components:
 | `liquidity` | 10 |
 | `momentum_volatility` | 10 |
 
+## GitHub Operating Rules
+
+- Treat GitHub Issue as the source of truth for scope, acceptance criteria, and review context.
+- Start every task from `main`, create a short-lived branch, and keep the branch name aligned with the issue.
+- Use `feat/<issue>-<slug>`, `fix/<issue>-<slug>`, `docs/<slug>`, `test/<issue>-<slug>`, `chore/<issue>-<slug>`, or `release/<version>`.
+- Do not push directly to `main`. Use PRs only.
+- One PR must have one purpose. Split unrelated code, docs, tests, and infra changes into separate PRs when practical.
+- Link the GitHub Issue in the branch, commit messages when useful, and PR body.
+- Prefer squash merge unless the reviewer or repo maintainer explicitly asks for another merge strategy.
+- Keep branches short-lived. Rebase or merge `main` into the branch only when needed to resolve drift.
+
+## PR And Review Rules
+
+- Write PRs with: summary, background, main changes, tests run, risk/impact, rollback plan, and linked Issue.
+- For backend work, include the exact commands run and their result in the PR body.
+- When API behavior changes, update the corresponding API contract docs and call out BE/FE impact explicitly.
+- Before requesting review, self-check for missing tests, regression risk, secret leakage, prohibited financial wording, and contract drift.
+- When reviewing a PR, prioritize correctness, regressions, security, API compatibility, and test coverage over style.
+- Use `Request changes` only for blocking issues. Use `Comment` for non-blocking follow-ups. Approve only when the branch is safe to merge.
+- After review feedback, either address it in the same branch or explain why it is out of scope in the PR thread.
+
 ## Safety Rules For AI And Chat
 
 - Refuse or redirect requests for buy/sell instructions, target prices, entry prices, stop-loss prices, guaranteed returns, or portfolio allocation advice.
@@ -80,10 +101,7 @@ Score engine components:
 
 ## Branch Policy (가이드 기준)
 
-- `main` 브랜치에 직접 push 금지.
-- 브랜치 네이밍: `feat/<issue>-<slug>`, `fix/<issue>-<slug>`, `docs/<slug>`, `release/<version>`.
-- PR 하나는 목적 하나만 가진다.
-- squash merge를 기본으로 한다.
+- Follow the GitHub Operating Rules above for branch naming, PR scope, and merge style.
 
 ## Coding Rules
 

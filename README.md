@@ -21,6 +21,8 @@ StockBrief는 한국 국내 주식 추천 후보 서비스다. 이 레포는 투
 
 ## 로컬 셋업
 
+Python 3.13 기준으로 개발한다. `.python-version`을 사용하면 버전을 맞추기 쉽다.
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate

@@ -6,6 +6,12 @@ variable "repository_url" {
   type = string
 }
 
+variable "access_token" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
 variable "branch_name" {
   type = string
 }

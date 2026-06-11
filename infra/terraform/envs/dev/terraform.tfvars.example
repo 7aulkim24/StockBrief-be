@@ -6,6 +6,7 @@ cors_allowed_origins    = "http://localhost:3000,http://127.0.0.1:3000"
 
 amplify_repository_url = "https://github.com/example/StockBrief-fe"
 amplify_branch_name    = "main"
+# Provide a real token via TF_VAR_amplify_access_token, not in this file.
 
 cognito_callback_urls           = ["http://localhost:3000/auth/callback"]
 cognito_logout_urls             = ["http://localhost:3000/account"]

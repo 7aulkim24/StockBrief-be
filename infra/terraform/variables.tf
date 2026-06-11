@@ -57,6 +57,13 @@ variable "amplify_repository_url" {
   default     = "https://github.com/example/stockbrief"
 }
 
+variable "amplify_access_token" {
+  description = "GitHub personal access token used by Amplify to connect the repository. Prefer TF_VAR_amplify_access_token and never commit a real value."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "amplify_branch_name" {
   description = "Amplify branch to deploy."
   type        = string

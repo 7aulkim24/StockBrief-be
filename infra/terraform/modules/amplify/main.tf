@@ -1,6 +1,7 @@
 resource "aws_amplify_app" "web" {
-  name       = "${var.name_prefix}-web"
-  repository = var.repository_url
+  name         = "${var.name_prefix}-web"
+  repository   = var.repository_url
+  access_token = var.access_token == "" ? null : var.access_token
 
   platform = "WEB_COMPUTE"
 

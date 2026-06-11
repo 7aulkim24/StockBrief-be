@@ -6,6 +6,7 @@ cors_allowed_origins    = "https://staging.example.com"
 
 amplify_repository_url = "https://github.com/example/StockBrief-fe"
 amplify_branch_name    = "staging"
+# Provide a real token via TF_VAR_amplify_access_token, not in this file.
 
 cognito_callback_urls           = ["https://staging.example.com/auth/callback"]
 cognito_logout_urls             = ["https://staging.example.com/account"]

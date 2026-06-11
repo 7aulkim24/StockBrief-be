@@ -71,7 +71,18 @@ Do not run `terraform apply` until AWS account, networking, repository connectio
    - `cognito_logout_urls`
    - `cognito_hosted_ui_domain_prefix`
 
-4. Initialize and validate Terraform:
+4. If deploying Amplify through Terraform, install the AWS Amplify GitHub App for
+   the target region/account and provide a GitHub personal access token through
+   an environment variable. Do not write the token into any tfvars file:
+
+   ```bash
+   export TF_VAR_amplify_access_token="<github-token>"
+   ```
+
+   For `ap-northeast-2`, install the GitHub App from:
+   `https://github.com/apps/aws-amplify-ap-northeast-2/installations/new`
+
+5. Initialize and validate Terraform:
 
    ```bash
    cd infra/terraform
@@ -81,13 +92,13 @@ Do not run `terraform apply` until AWS account, networking, repository connectio
    terraform plan -var-file=envs/dev/terraform.tfvars
    ```
 
-5. Review the plan. Apply only after placeholders, cost expectations, deletion protection, networking, and secret handling are approved:
+6. Review the plan. Apply only after placeholders, cost expectations, deletion protection, networking, and secret handling are approved:
 
    ```bash
    terraform apply -var-file=envs/dev/terraform.tfvars
    ```
 
-6. After resources exist, update Secrets Manager values outside git and redeploy Lambda/Amplify as needed.
+7. After resources exist, update Secrets Manager values outside git and redeploy Lambda/Amplify as needed.
 
 ## Lambda Packaging
 
@@ -145,6 +156,8 @@ NEXT_PUBLIC_COGNITO_REDIRECT_URI
 ```
 
 `NEXT_PUBLIC_API_BASE_URL` is populated from the API Gateway output in Terraform. For local development, keep using `.env.example`.
+
+For Terraform-created Amplify apps, AWS requires the Amplify GitHub App to be installed and a GitHub access token to be supplied during app creation. Pass it through `TF_VAR_amplify_access_token`; do not commit it.
 
 ## RDS Proxy
 

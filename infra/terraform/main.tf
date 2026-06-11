@@ -100,6 +100,7 @@ module "amplify" {
 
   name_prefix              = local.name_prefix
   repository_url           = var.amplify_repository_url
+  access_token             = var.amplify_access_token
   branch_name              = var.amplify_branch_name
   next_public_api_base     = module.api_lambda.api_base_url
   cognito_region           = var.aws_region

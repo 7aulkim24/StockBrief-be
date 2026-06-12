@@ -1,0 +1,46 @@
+name: pr-auto-merge
+
+on:
+  pull_request_target:
+    types: [labeled, ready_for_review, synchronize, reopened]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number to queue for auto-merge
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-auto-merge-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  enable-auto-merge:
+    name: Enable GitHub auto-merge
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.draft == false &&
+        contains(github.event.pull_request.labels.*.name, 'auto-merge')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enable squash auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          gh pr view "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json number,title,isDraft,baseRefName,mergeStateStatus,reviewDecision,statusCheckRollup
+
+          gh pr merge "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --auto \
+            --squash \
+            --delete-branch

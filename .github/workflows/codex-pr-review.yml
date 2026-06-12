@@ -1,0 +1,145 @@
+name: codex-pr-review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize, edited]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number to request Codex review for
+        required: true
+      focus:
+        description: Optional Codex review focus
+        required: false
+        default: backend correctness, API contract drift, security regressions, test coverage, and financial wording policy
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: codex-pr-review-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  pr-template-gate:
+    name: PR template gate
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check PR template completeness
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const prNumber = context.eventName === 'workflow_dispatch'
+              ? Number(core.getInput('pr_number'))
+              : context.payload.pull_request.number;
+
+            const { owner, repo } = context.repo;
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            const body = pr.body || "";
+            const requiredSections = [
+              "요약",
+              "배경 및 이유",
+              "주요 변경 사항",
+              "테스트 명령 및 결과",
+              "리스크 및 영향도",
+              "롤백 계획",
+            ];
+
+            function sectionBody(title) {
+              const lines = body.split(/\r?\n/);
+              const heading = new RegExp(`^##\\s+${title}\\s*$`);
+              const label = new RegExp(`^${title}:\\s*$`);
+              const start = lines.findIndex((line) => {
+                const trimmed = line.trim();
+                return heading.test(trimmed) || label.test(trimmed);
+              });
+              if (start === -1) {
+                return "";
+              }
+
+              const content = [];
+              for (let index = start + 1; index < lines.length; index += 1) {
+                if (/^##\s+/.test(lines[index])) {
+                  break;
+                }
+                content.push(lines[index]);
+              }
+
+              return content.join("\n").trim();
+            }
+
+            function hasMeaningfulContent(value) {
+              return value
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .some((line) => line && line !== "-" && !line.startsWith("<!--"));
+            }
+
+            const missing = requiredSections.filter(
+              (title) => !hasMeaningfulContent(sectionBody(title)),
+            );
+
+            if (missing.length > 0) {
+              core.setFailed(
+                `PR template is incomplete. Fill these sections before Codex review: ${missing.join(", ")}`,
+              );
+            }
+
+  request-codex-review:
+    name: Request Codex review
+    needs: pr-template-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Comment @codex review
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const prNumber = context.eventName === 'workflow_dispatch'
+              ? Number(core.getInput('pr_number'))
+              : context.payload.pull_request.number;
+            const focus = context.eventName === 'workflow_dispatch'
+              ? core.getInput('focus')
+              : "backend correctness, API contract drift, security regressions, test coverage, and financial wording policy";
+
+            const { owner, repo } = context.repo;
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            if (pr.draft) {
+              core.info(`Skipping draft PR #${prNumber}.`);
+              return;
+            }
+
+            const marker = `<!-- codex-pr-review: ${pr.head.sha} -->`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+
+            if (comments.some((comment) => comment.body?.includes(marker))) {
+              core.info(`Codex review was already requested for ${pr.head.sha}.`);
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: `@codex review for ${focus}\n\n${marker}`,
+            });

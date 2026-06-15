@@ -83,24 +83,133 @@ class CandidateService:
         limit: int,
         offset: int,
     ) -> StockCandidateContractData:
-        rows = self._candidate_rows(market=market, sector=sector)
-        items = self._stock_candidate_contract_items(rows)
-        risk_counts = self._candidate_risk_counts(rows)
-        items = _sort_stock_candidate_contract_items(
-            items=items,
-            sort=sort,
-            risk_profile=risk_profile,
-            risk_counts=risk_counts,
+        base_statement = self._stock_candidate_base_statement(market=market, sector=sector)
+        candidate_index = (
+            base_statement.with_only_columns(
+                Stock.ticker.label("ticker"),
+                RecommendationScore.as_of_date.label("as_of_date"),
+            )
+            .order_by(None)
+            .subquery()
         )
-        paged = items[offset : offset + limit]
-        as_of = max(
-            (item.score.as_of for item in items),
-            default=datetime.now(timezone.utc).date(),
-        )
+        total = self.session.scalar(select(func.count()).select_from(candidate_index)) or 0
+        as_of = self.session.scalar(select(func.max(candidate_index.c.as_of_date)))
+        rows = self.session.execute(
+            self._order_stock_candidate_statement(
+                statement=base_statement,
+                sort=sort,
+                risk_profile=risk_profile,
+            )
+            .limit(limit)
+            .offset(offset)
+        ).all()
+        candidate_rows = [(stock, score) for stock, score, _risk_count, _volume in rows]
+        items = self._stock_candidate_contract_items(candidate_rows)
         return StockCandidateContractData(
-            as_of=as_of,
-            items=paged,
-            pagination=pagination(limit=limit, offset=offset, total=len(items)),
+            as_of=as_of or datetime.now(timezone.utc).date(),
+            items=items,
+            pagination=pagination(limit=limit, offset=offset, total=total),
+        )
+
+    def _stock_candidate_base_statement(
+        self,
+        *,
+        market: str | None,
+        sector: str | None,
+    ):
+        risk_counts = (
+            select(
+                RiskSignal.ticker.label("ticker"),
+                RiskSignal.as_of_date.label("as_of_date"),
+                func.count(RiskSignal.id).label("risk_count"),
+            )
+            .group_by(RiskSignal.ticker, RiskSignal.as_of_date)
+            .subquery()
+        )
+        latest_price_dates = (
+            select(
+                PriceMetric.ticker.label("ticker"),
+                func.max(PriceMetric.trade_date).label("trade_date"),
+            )
+            .group_by(PriceMetric.ticker)
+            .subquery()
+        )
+        latest_prices = (
+            select(
+                PriceMetric.ticker.label("ticker"),
+                PriceMetric.volume.label("volume"),
+            )
+            .join(
+                latest_price_dates,
+                (PriceMetric.ticker == latest_price_dates.c.ticker)
+                & (PriceMetric.trade_date == latest_price_dates.c.trade_date),
+            )
+            .subquery()
+        )
+
+        statement = (
+            select(
+                Stock,
+                RecommendationScore,
+                risk_counts.c.risk_count,
+                latest_prices.c.volume,
+            )
+            .join(RecommendationScore, RecommendationScore.ticker == Stock.ticker)
+            .outerjoin(
+                risk_counts,
+                (risk_counts.c.ticker == Stock.ticker)
+                & (risk_counts.c.as_of_date == RecommendationScore.as_of_date),
+            )
+            .outerjoin(latest_prices, latest_prices.c.ticker == Stock.ticker)
+            .where(
+                RecommendationScore.is_candidate_eligible.is_(True),
+                RecommendationScore.evidence_count >= 2,
+                RecommendationScore.missing_data.is_not(None),
+                RecommendationScore.data_freshness.is_not(None),
+                RecommendationScore.data_freshness["as_of"].as_string().is_not(None),
+            )
+        )
+        if market:
+            statement = statement.where(Stock.market == market)
+        if sector:
+            statement = statement.where(Stock.sector == sector)
+        return statement
+
+    def _order_stock_candidate_statement(
+        self,
+        *,
+        statement,
+        sort: str,
+        risk_profile: RiskProfile,
+    ):
+        selected_columns = statement.selected_columns
+        risk_count = func.coalesce(selected_columns.risk_count, 0)
+        latest_volume = func.coalesce(selected_columns.volume, 0)
+
+        if sort == "volume_desc":
+            return statement.order_by(
+                latest_volume.desc(),
+                RecommendationScore.total_score.desc(),
+                Stock.ticker.asc(),
+            )
+        if sort == "updated_desc":
+            return statement.order_by(
+                RecommendationScore.as_of_date.desc(),
+                RecommendationScore.total_score.desc(),
+                Stock.ticker.asc(),
+            )
+        if risk_profile == "conservative":
+            return statement.order_by(
+                risk_count.asc(),
+                RecommendationScore.total_score.desc(),
+                Stock.ticker.asc(),
+            )
+        if risk_profile == "aggressive":
+            return statement.order_by(RecommendationScore.total_score.desc(), Stock.ticker.asc())
+        return statement.order_by(
+            (RecommendationScore.total_score - risk_count * Decimal("0.5")).desc(),
+            RecommendationScore.total_score.desc(),
+            Stock.ticker.asc(),
         )
 
     def stock_score(self, ticker: str) -> StockScoreResponse:

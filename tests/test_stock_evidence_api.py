@@ -105,6 +105,23 @@ def test_stock_candidates_respect_risk_profile_sorting(
     assert conservative.json()["data"]["items"][0]["ticker"] != "005930"
 
 
+def test_stock_candidates_include_items_without_risk_signals(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    seeded_session.execute(delete(RiskSignal).where(RiskSignal.ticker == "005930"))
+    seeded_session.commit()
+
+    response = seeded_api_client.get(
+        "/v1/stocks/candidates",
+        params={"limit": 100},
+    )
+
+    assert response.status_code == 200
+    tickers = {item["ticker"] for item in response.json()["data"]["items"]}
+    assert "005930" in tickers
+
+
 def test_stock_candidates_bulk_loads_candidate_related_data(
     seeded_api_client: TestClient,
     seeded_session: Session,
@@ -125,6 +142,32 @@ def test_stock_candidates_bulk_loads_candidate_related_data(
     assert response.status_code == 200
     assert response.json()["data"]["items"]
     assert len(statements) <= 8
+
+
+def test_stock_candidates_use_database_limit_offset(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    engine = seeded_session.get_bind()
+    statements: list[str] = []
+
+    def capture_statement(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement.upper())
+
+    event.listen(engine, "before_cursor_execute", capture_statement)
+    try:
+        response = seeded_api_client.get(
+            "/v1/stocks/candidates",
+            params={"limit": 1, "offset": 1},
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_statement)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["pagination"]["limit"] == 1
+    assert response.json()["data"]["pagination"]["offset"] == 1
+    assert any(" LIMIT " in statement and " OFFSET " in statement for statement in statements)
 
 
 def test_invalid_ticker_returns_contract_error(seeded_api_client: TestClient) -> None:

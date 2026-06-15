@@ -1,11 +1,13 @@
 from typing import Any
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.orm import ApiCacheEntry, ExternalApiCallLog
 from app.services.external import NaverNewsClient, OpenDartClient
+from app.services.external import aws_secrets
 from app.services.external.clients import BaseExternalApiClient
 from app.services.external.types import ExternalRequest, ExternalResponse, RateLimitPolicy
 
@@ -13,6 +15,68 @@ from app.services.external.types import ExternalRequest, ExternalResponse, RateL
 def test_external_clients_share_base_template_methods() -> None:
     assert issubclass(OpenDartClient, BaseExternalApiClient)
     assert issubclass(NaverNewsClient, BaseExternalApiClient)
+
+
+def test_aws_secret_loader_uses_boto3_client(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeSecretsManagerClient:
+        def get_secret_value(self, *, SecretId: str) -> dict[str, str]:
+            calls.append({"SecretId": SecretId})
+            return {"SecretString": '{"DATABASE_URL": "postgresql+psycopg://prod"}'}
+
+    def fake_client(service_name: str, **kwargs: object) -> FakeSecretsManagerClient:
+        calls.append({"service_name": service_name, **kwargs})
+        return FakeSecretsManagerClient()
+
+    monkeypatch.setattr(aws_secrets.boto3, "client", fake_client)
+
+    assert aws_secrets.load_secret_json("stockbrief-dev/database", region="ap-northeast-2") == {
+        "DATABASE_URL": "postgresql+psycopg://prod"
+    }
+    assert calls[0]["service_name"] == "secretsmanager"
+    assert calls[0]["region_name"] == "ap-northeast-2"
+    assert calls[1] == {"SecretId": "stockbrief-dev/database"}
+
+
+def test_aws_secret_loader_handles_client_error(monkeypatch) -> None:
+    from botocore.exceptions import ClientError
+
+    class FakeSecretsManagerClient:
+        def get_secret_value(self, *, SecretId: str) -> dict[str, str]:
+            raise ClientError(
+                error_response={
+                    "Error": {
+                        "Code": "ResourceNotFoundException",
+                        "Message": "Not Found",
+                    }
+                },
+                operation_name="GetSecretValue",
+            )
+
+    monkeypatch.setattr(
+        aws_secrets.boto3,
+        "client",
+        lambda *args, **kwargs: FakeSecretsManagerClient(),
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to load AWS secret"):
+        aws_secrets.load_secret_string("missing-secret")
+
+
+def test_aws_secret_loader_handles_missing_secret_string(monkeypatch) -> None:
+    class FakeSecretsManagerClient:
+        def get_secret_value(self, *, SecretId: str) -> dict[str, str]:
+            return {}
+
+    monkeypatch.setattr(
+        aws_secrets.boto3,
+        "client",
+        lambda *args, **kwargs: FakeSecretsManagerClient(),
+    )
+
+    with pytest.raises(RuntimeError, match="did not return SecretString"):
+        aws_secrets.load_secret_string("invalid-secret")
 
 
 def test_opendart_fallback_without_api_key_does_not_call_external_api(

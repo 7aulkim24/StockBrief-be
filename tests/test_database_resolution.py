@@ -2,6 +2,11 @@ from app.config import Settings
 from app import db
 
 
+def test_database_url_has_no_hardcoded_default(monkeypatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert Settings(_env_file=None).database_url == ""
+
+
 def test_resolve_database_url_prefers_local_env_when_local(monkeypatch) -> None:
     monkeypatch.setattr(
         db,

@@ -59,10 +59,10 @@ def _claims_from_api_gateway_event(request: Request) -> CognitoClaims | None:
     authorizer = request_context.get("authorizer")
     if not isinstance(authorizer, dict):
         return None
-    jwt = authorizer.get("jwt")
-    if not isinstance(jwt, dict):
+    jwt_data = authorizer.get("jwt")
+    if not isinstance(jwt_data, dict):
         return None
-    claims = jwt.get("claims")
+    claims = jwt_data.get("claims")
     if not isinstance(claims, dict):
         return None
     sub = claims.get("sub")

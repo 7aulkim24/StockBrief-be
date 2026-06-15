@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     service_version: str = Field(default="0.1.0", validation_alias="SERVICE_VERSION")
     api_base_path: str = Field(default="/v1", validation_alias="API_BASE_PATH")
     database_url: str = Field(
-        default="postgresql+psycopg://stockbrief:stockbrief@localhost:5432/stockbrief",
+        default="",
         validation_alias="DATABASE_URL",
     )
     database_secret_arn: str = Field(default="", validation_alias="DATABASE_SECRET_ARN")

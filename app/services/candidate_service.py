@@ -516,7 +516,7 @@ def _sort_candidates(
 def _passes_evidence_gate(
     stock: Stock,
     score: RecommendationScore,
-    risk_pairs: set[tuple[str, date]],
+    risk_signals: set[tuple[str, date]],
 ) -> bool:
     if score.evidence_count < 2:
         return False
@@ -524,7 +524,7 @@ def _passes_evidence_gate(
         return False
     if not isinstance(score.data_freshness, dict) or not score.data_freshness.get("as_of"):
         return False
-    return (stock.ticker, score.as_of_date) in risk_pairs
+    return (stock.ticker, score.as_of_date) in risk_signals
 
 
 def _score_components(components: list[dict[str, object]]) -> list[ScoreComponentResponse]:

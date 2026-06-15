@@ -33,6 +33,11 @@ COMPONENT_LABELS: dict[str, str] = {
     "momentum_volatility": "모멘텀과 변동성",
 }
 
+# Domain thresholds are intentionally conservative MVP heuristics.
+# Ratio scores map weak and excellent business thresholds to a bounded 30-90
+# component range, then component weights and risk penalties produce the final
+# 0-100 candidate score. Keep threshold changes explicit and covered by tests.
+
 
 def calculate_recommendation_score(
     score_input: RecommendationScoreInput,
@@ -368,4 +373,3 @@ def _number(value: Any) -> float | None:
 
 def _clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(maximum, value))
-

@@ -1,0 +1,63 @@
+name: backend-dev-deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-northeast-2
+  TF_DIR: infra/terraform
+  TF_VAR_FILE: envs/dev/deploy.auto.tfvars.json
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: backend-dev-deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy-dev:
+    name: Deploy dev backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEV_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Build Lambda package
+        run: ./scripts/package_api_lambda.sh
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -input=false
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform plan
+        run: >-
+          terraform plan
+          -input=false
+          -var-file="${{ env.TF_VAR_FILE }}"
+          -var='operational_alarm_email_addresses=${{ vars.OPERATIONAL_ALARM_EMAILS_JSON }}'
+          -out=tfplan
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve tfplan
+        working-directory: ${{ env.TF_DIR }}

@@ -41,6 +41,12 @@ infra/terraform
 
 Do not run `terraform apply` until AWS account, networking, repository connection, and secrets process are confirmed.
 
+For a new AWS account or environment, first run the one-time GitHub OIDC and
+Terraform state bootstrap documented in
+`docs/engineering/DEPLOYMENT_BOOTSTRAP.md`. The bootstrap creates the remote
+state bucket, lock table, GitHub Actions OIDC provider, deploy role, and GitHub
+repository variables required by `.github/workflows/backend-dev-deploy.yml`.
+
 1. Package the backend Lambda zip:
 
    ```bash
@@ -316,6 +322,32 @@ Set `operational_alarm_email_addresses` to subscribe email recipients through
 SNS. Email subscriptions require each recipient to confirm the AWS SNS
 subscription email before notifications are delivered. Leave the list empty to
 create alarms without notification actions.
+
+## GitHub Actions Dev Deployment
+
+The dev backend deployment uses GitHub Actions OIDC instead of long-lived AWS
+access keys. The `backend-dev-deploy` workflow runs on pushes to `main` and on
+manual dispatch.
+
+Bootstrap resources:
+
+| Resource | Name |
+| --- | --- |
+| Terraform state bucket | `stockbrief-terraform-state-420615923610-ap-northeast-2` |
+| Terraform lock table | `stockbrief-terraform-locks` |
+| GitHub OIDC provider | `token.actions.githubusercontent.com` |
+| GitHub deploy role | `stockbrief-dev-github-actions-deploy` |
+
+Required GitHub repository variables:
+
+| Variable | Value |
+| --- | --- |
+| `AWS_DEV_DEPLOY_ROLE_ARN` | `arn:aws:iam::420615923610:role/stockbrief-dev-github-actions-deploy` |
+| `OPERATIONAL_ALARM_EMAILS_JSON` | JSON list of alarm recipient emails |
+
+The workflow builds `dist/stockbrief-api-lambda.zip`, initializes Terraform with
+the S3 backend, plans with `envs/dev/deploy.auto.tfvars.json`, and applies the
+plan to dev.
 
 ## Current Limitations
 

@@ -210,7 +210,7 @@ NEXT_PUBLIC_COGNITO_REDIRECT_URI
 
 `NEXT_PUBLIC_API_BASE_URL` is populated from the API Gateway output in Terraform. For local development, keep using `.env.example`.
 
-For Terraform-created Amplify apps, AWS requires the Amplify GitHub App to be installed and a GitHub access token to be supplied during app creation. Pass it through `TF_VAR_amplify_access_token`; do not commit it.
+For Terraform-created Amplify apps, AWS requires the Amplify GitHub App to be installed and a GitHub access token to be supplied during app creation. Pass it through `TF_VAR_amplify_access_token`; do not commit it. After the app exists, Terraform ignores `access_token` drift so GitHub Actions can update the app without storing a personal GitHub token as a repository secret.
 
 Amplify Hosted UI callback setup is intentionally two-step:
 

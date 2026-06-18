@@ -5,6 +5,10 @@ resource "aws_amplify_app" "web" {
 
   platform = "WEB_COMPUTE"
 
+  lifecycle {
+    ignore_changes = [access_token]
+  }
+
   environment_variables = {
     NEXT_PUBLIC_API_BASE_URL             = "${var.next_public_api_base}/v1"
     NEXT_PUBLIC_APP_NAME                 = "StockBrief"

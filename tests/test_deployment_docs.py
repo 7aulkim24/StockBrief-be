@@ -69,6 +69,32 @@ def test_terraform_readme_documents_multi_repository_layout() -> None:
     assert "services/api" not in terraform_readme
 
 
+def _markdown_section(markdown: str, heading: str) -> str:
+    start_marker = f"### {heading}"
+    start = markdown.index(start_marker)
+    next_heading = markdown.find("\n## ", start + len(start_marker))
+    if next_heading == -1:
+        return markdown[start:]
+    return markdown[start:next_heading]
+
+
+def test_ingestion_scheduler_enable_gate_documents_live_provider_prerequisites() -> None:
+    terraform_readme = (REPOSITORY_ROOT / "infra/terraform/README.md").read_text(
+        encoding="utf-8"
+    )
+    scheduler_gate = _markdown_section(terraform_readme, "Scheduler Enable Gate")
+
+    assert "Scheduler Enable Gate" in scheduler_gate
+    assert "Secrets Manager" in scheduler_gate
+    assert "ingest_provider_batch" in scheduler_gate
+    assert "outbound internet egress" in scheduler_gate
+    assert "S3 raw archive" in scheduler_gate
+    assert "DLQ" in scheduler_gate
+    assert "rate-limit" in scheduler_gate
+    assert "data freshness" in scheduler_gate
+    assert "keep the scheduler disabled" in scheduler_gate
+
+
 def test_terraform_readme_documents_external_api_secret_update_runbook() -> None:
     terraform_readme = (REPOSITORY_ROOT / "infra/terraform/README.md").read_text(
         encoding="utf-8"

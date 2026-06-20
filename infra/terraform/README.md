@@ -320,6 +320,26 @@ Keep the scheduler disabled for the first dev apply. Manually invoke
 `ingest_provider_batch` first, confirm `ingestion_runs`, normalized rows, S3 raw
 objects, and DLQ behavior, then enable the scheduler in a separate reviewed PR.
 
+### Scheduler Enable Gate
+
+Do not set `enable_ingestion_scheduler = true` until all of these checks are
+complete and recorded in the PR body:
+
+- `OPENDART_API_KEY`, `NAVER_CLIENT_ID`, and `NAVER_CLIENT_SECRET` are populated
+  in Secrets Manager outside git.
+- A manual `ingest_provider_batch` run succeeds for the target provider and
+  ticker list without `missing_api_key` fallback.
+- Lambda outbound internet egress to the selected provider is verified from the
+  deployed Lambda environment. S3 Gateway VPC Endpoint only covers raw archive
+  writes to S3; it does not provide internet egress for OpenDART or Naver.
+- S3 raw archive objects are written for the manual run and the SQS DLQ remains
+  empty after the smoke test.
+- The schedule expression, provider, and ticker list are reviewed for cost,
+  rate-limit, and data freshness expectations.
+
+If any check fails, keep the scheduler disabled and run ingestion manually until
+the missing credential, network egress, or provider behavior is fixed.
+
 ## AgentCore Runtime
 
 AgentCore Runtime is disabled by default because it requires a built agent container image in ECR.

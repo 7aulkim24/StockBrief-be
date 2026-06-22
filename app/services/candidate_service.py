@@ -299,11 +299,13 @@ class CandidateService:
             )
             .order_by(RiskSignal.created_at.asc())
         ).all()
+        evidence_summary = self._candidate_evidence_summaries([stock.ticker]).get(stock.ticker)
         return _candidate_response_from_loaded(
             stock=stock,
             score=score,
             reasons=list(reasons),
             risks=list(risks),
+            evidence_summary=evidence_summary,
         )
 
     def latest_price_contract(self, ticker: str) -> StockPriceContract | None:
@@ -391,6 +393,7 @@ class CandidateService:
         ).all()
         for risk in risks:
             risks_by_key[(risk.ticker, risk.as_of_date)].append(risk)
+        evidence_summaries = self._candidate_evidence_summaries(tickers)
 
         return [
             _candidate_response_from_loaded(
@@ -398,6 +401,7 @@ class CandidateService:
                 score=score,
                 reasons=reasons_by_score_id.get(score.id, []),
                 risks=risks_by_key.get((stock.ticker, score.as_of_date), []),
+                evidence_summary=evidence_summaries.get(stock.ticker),
             )
             for stock, score in rows
         ]
@@ -533,7 +537,16 @@ def _candidate_response_from_loaded(
     score: RecommendationScore,
     reasons: list[RecommendationReason],
     risks: list[RiskSignal],
+    evidence_summary: CandidateEvidenceSummaryContract | None = None,
 ) -> RecommendationCandidateResponse:
+    live_evidence_count = 0
+    data_freshness = dict(score.data_freshness or {})
+    if evidence_summary is not None:
+        live_evidence_count = evidence_summary.news_count + evidence_summary.disclosure_count
+        if evidence_summary.latest_at is not None:
+            data_freshness["live_evidence_latest_at"] = _utc_isoformat(
+                evidence_summary.latest_at
+            )
     return RecommendationCandidateResponse(
         ticker=stock.ticker,
         name=stock.company_name,
@@ -553,9 +566,9 @@ def _candidate_response_from_loaded(
         ],
         risk_tags=[risk.risk_tag for risk in risks],
         evidence_level=_evidence_level(score.evidence_level),
-        evidence_count=score.evidence_count,
+        evidence_count=max(score.evidence_count, live_evidence_count),
         missing_data=list(score.missing_data or []),
-        data_freshness=dict(score.data_freshness or {}),
+        data_freshness=data_freshness,
         disclaimer=DISCLAIMER,
     )
 
@@ -575,6 +588,12 @@ def _stock_score_contract(score: RecommendationScore) -> StockScoreContract:
             news=component_by_name.get("news_attention", 0),
         ),
     )
+
+
+def _utc_isoformat(value: datetime) -> str:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc).isoformat()
+    return value.astimezone(timezone.utc).isoformat()
 
 
 def _score_grade(score: float) -> str:

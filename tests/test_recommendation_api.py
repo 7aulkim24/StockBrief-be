@@ -1,12 +1,15 @@
 from collections.abc import Mapping
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
 from sqlalchemy import event
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.orm import RecommendationScore
+from app.orm import EvidenceChunk, RecommendationScore, SourceDocument
 
 
 PROHIBITED_KOREAN_TERMS = [
@@ -50,6 +53,64 @@ def _assert_candidate_shape(candidate: dict[str, Any]) -> None:
     assert candidate["evidence_count"] >= 2
     assert candidate["evidence_level"] in {"strong", "medium", "weak"}
     assert candidate["disclaimer"] == "공개 데이터 기반 검토 후보이며 최종 투자 판단은 사용자에게 있습니다."
+
+
+def _replace_live_evidence_chunks(
+    seeded_session: Session,
+    *,
+    ticker: str,
+    published_at: datetime,
+) -> int:
+    seeded_session.execute(delete(EvidenceChunk).where(EvidenceChunk.ticker == ticker))
+    live_sources = [
+        {
+            "source_type": "news",
+            "source_name": "NAVER_NEWS",
+            "external_id": f"live-news-{ticker}",
+            "evidence_id": f"ev_live_news_{ticker}",
+            "source_url": "https://news.example/live",
+            "evidence_type": "news",
+        },
+        {
+            "source_type": "disclosure",
+            "source_name": "OpenDART",
+            "external_id": f"live-disclosure-{ticker}",
+            "evidence_id": f"ev_live_disclosure_{ticker}",
+            "source_url": "https://dart.example/live",
+            "evidence_type": "disclosure",
+        },
+    ]
+    for item in live_sources:
+        source = SourceDocument(
+            ticker=ticker,
+            source_type=item["source_type"],
+            source_name=item["source_name"],
+            source_url=item["source_url"],
+            external_id=item["external_id"],
+            title=f"{item['evidence_type']} live evidence",
+            published_at=published_at,
+            fetched_at=published_at,
+            content_hash=item["external_id"],
+            raw_content="{}",
+            metadata_={"provider": item["source_name"]},
+        )
+        seeded_session.add(source)
+        seeded_session.flush()
+        seeded_session.add(
+            EvidenceChunk(
+                evidence_id=item["evidence_id"],
+                ticker=ticker,
+                source_document_id=source.id,
+                evidence_type=item["evidence_type"],
+                chunk_text="live evidence summary",
+                source_url=source.source_url,
+                published_at=published_at,
+                fetched_at=published_at,
+                confidence=Decimal("0.9000"),
+                metadata_={"provider": item["source_name"]},
+            )
+        )
+    return len(live_sources)
 
 
 def test_list_recommendation_candidates_from_seed(
@@ -134,6 +195,32 @@ def test_get_stock_score(seeded_api_client: TestClient) -> None:
     assert len(payload["score_components"]) == 8
     assert 0 <= payload["recommendation_score"] <= 100
     assert payload["evidence_level"] == "medium"
+
+
+def test_recommendation_and_score_overlay_live_evidence_freshness(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    published_at = datetime(2026, 6, 22, 6, 16, tzinfo=timezone.utc)
+    live_count = _replace_live_evidence_chunks(
+        seeded_session,
+        ticker="005930",
+        published_at=published_at,
+    )
+    score = seeded_session.scalars(
+        select(RecommendationScore).where(RecommendationScore.ticker == "005930")
+    ).one()
+    score.evidence_count = 1
+    seeded_session.commit()
+
+    candidate_response = seeded_api_client.get("/v1/recommendations/candidates/005930")
+    score_response = seeded_api_client.get("/v1/stocks/005930/score")
+
+    assert candidate_response.status_code == 200
+    assert score_response.status_code == 200
+    for payload in [candidate_response.json(), score_response.json()]:
+        assert payload["evidence_count"] == live_count
+        assert payload["data_freshness"]["live_evidence_latest_at"] == published_at.isoformat()
 
 
 def test_recommendation_endpoints_do_not_emit_prohibited_korean_terms(

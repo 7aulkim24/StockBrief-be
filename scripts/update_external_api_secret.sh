@@ -88,7 +88,12 @@ require_command python3
 
 if [ -z "$secret_id" ]; then
   require_command terraform
-  secret_id="$(terraform -chdir="$terraform_dir" output -raw external_api_secret_arn)"
+  secret_id="$(
+    AWS_PROFILE="$profile" \
+      AWS_REGION="$region" \
+      AWS_DEFAULT_REGION="$region" \
+      terraform -chdir="$terraform_dir" output -raw external_api_secret_arn
+  )"
 fi
 
 if [ -z "$secret_id" ]; then

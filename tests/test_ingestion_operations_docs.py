@@ -64,6 +64,7 @@ def test_ingestion_operations_runbook_keeps_secret_handling_safe() -> None:
     assert "not copied into PR comments" in runbook
     assert "scripts/update_external_api_secret.sh --prompt --dry-run" in runbook
     assert "scripts/update_external_api_secret.sh --prompt" in runbook
+    assert "--secret-id" in runbook
     assert "get-secret-value" in runbook
     assert "do not contain API keys, client secrets, tokens, or database" in runbook
     assert "Lambda outbound internet egress is confirmed" in runbook

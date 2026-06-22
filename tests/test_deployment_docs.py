@@ -65,6 +65,10 @@ def test_external_api_secret_update_script_handles_secret_payload_safely() -> No
     assert "Missing required environment variables" in script
     assert "mktemp" in script
     assert "trap cleanup EXIT" in script
+    assert 'AWS_PROFILE="$profile"' in script
+    assert 'AWS_REGION="$region"' in script
+    assert 'AWS_DEFAULT_REGION="$region"' in script
+    assert 'terraform -chdir="$terraform_dir" output -raw external_api_secret_arn' in script
     assert "aws secretsmanager update-secret" in script
     assert '--secret-string "file://${tmp_payload}"' in script
     assert "aws secretsmanager describe-secret" in script
@@ -126,6 +130,8 @@ def test_terraform_readme_documents_external_api_secret_update_runbook() -> None
     assert "terraform output -raw external_api_secret_arn" in terraform_readme
     assert "scripts/update_external_api_secret.sh --prompt --dry-run" in terraform_readme
     assert "scripts/update_external_api_secret.sh --prompt" in terraform_readme
+    assert "`--secret-id`" in terraform_readme
+    assert "skip Terraform state lookup" in terraform_readme
     assert "aws secretsmanager update-secret" in terraform_readme
     assert "`file://`" in terraform_readme
     assert "aws secretsmanager describe-secret" in terraform_readme

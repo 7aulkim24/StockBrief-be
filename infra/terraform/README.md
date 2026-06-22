@@ -499,7 +499,9 @@ tokens, or copied secret payloads.
    The script resolves `external_api_secret_arn` from Terraform output by
    default, writes a temporary JSON payload outside git, passes it to
    `aws secretsmanager update-secret` with `file://`, and deletes the temporary
-   payload automatically.
+   payload automatically. The script also passes `--profile` and `--region` to
+   both Terraform state lookup and AWS Secrets Manager calls; use `--secret-id`
+   to skip Terraform state lookup entirely when needed.
 
 5. Verify metadata only. Do not use `get-secret-value` in shared logs or PR
    evidence because it prints secret material. The script prints this metadata

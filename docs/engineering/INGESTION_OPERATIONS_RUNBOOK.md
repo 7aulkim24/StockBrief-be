@@ -40,7 +40,9 @@ payloads into PR comments, shared logs, or issue comments.
   ```
 
   The script prints Secrets Manager metadata only. Do not use
-  `get-secret-value` in shared logs because it prints the secret payload.
+  `get-secret-value` in shared logs because it prints the secret payload. If
+  Terraform state access fails, pass the external API secret ARN with
+  `--secret-id` to skip state lookup.
 - Lambda has outbound internet egress for OpenDART and NAVER. Verify it from the
   Lambda runtime after the readiness check:
 

@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -29,6 +29,20 @@ class EvidenceService:
         offset: int,
     ) -> StockEvidenceContractData:
         requested_types = contract_source_type_filter(source_type)
+        if requested_types <= {"news", "disclosure"}:
+            evidence, total = self._chunk_evidence_page(
+                ticker=ticker,
+                requested_types=requested_types,
+                from_date=from_date,
+                to_date=to_date,
+                limit=limit,
+                offset=offset,
+            )
+            return StockEvidenceContractData(
+                ticker=ticker,
+                items=[stock_evidence_contract_item(item) for item in evidence],
+                pagination=pagination(limit=limit, offset=offset, total=total),
+            )
         evidence = self.items(ticker, requested_types)
         evidence = filter_evidence_dates(evidence, from_date=from_date, to_date=to_date)
         limited = evidence[offset : offset + limit]
@@ -95,36 +109,58 @@ class EvidenceService:
         ticker: str,
         requested_types: set[str],
     ) -> list[StockEvidenceItemResponse]:
-        chunks = self.session.scalars(
-            select(EvidenceChunk)
-            .where(EvidenceChunk.ticker == ticker)
-            .order_by(EvidenceChunk.fetched_at.desc())
-        ).all()
-        items = []
-        for chunk in chunks:
-            source = self.session.get(SourceDocument, chunk.source_document_id)
-            evidence_type = source_type_to_evidence_type(source.source_type if source else "")
-            if evidence_type not in requested_types:
-                continue
-            items.append(
-                StockEvidenceItemResponse(
-                    id=chunk.evidence_id,
-                    type=evidence_type,
-                    title=source.title if source else f"{ticker} 근거 데이터",
-                    summary=chunk.chunk_text,
-                    source_name=source.source_name if source else "UNKNOWN_SOURCE",
-                    source_url=chunk.source_url or (source.source_url if source else None),
-                    source_identifier=(
-                        source.external_id if source else str(chunk.source_document_id)
-                    ),
-                    published_at=(
-                        chunk.published_at or (source.published_at if source else None)
-                    ),
-                    as_of_date=(chunk.published_at.date() if chunk.published_at else None),
-                    data_status="available",
-                )
+        rows = self.session.execute(self._chunk_evidence_statement(ticker, requested_types)).all()
+        return [_chunk_evidence_item(chunk, source) for chunk, source in rows]
+
+    def _chunk_evidence_page(
+        self,
+        *,
+        ticker: str,
+        requested_types: set[str],
+        from_date: date | None,
+        to_date: date | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[StockEvidenceItemResponse], int]:
+        statement = self._chunk_evidence_statement(ticker, requested_types)
+        evidence_date = func.date(
+            func.coalesce(EvidenceChunk.published_at, SourceDocument.published_at)
+        )
+        if from_date is not None:
+            statement = statement.where(evidence_date >= from_date.isoformat())
+        if to_date is not None:
+            statement = statement.where(evidence_date <= to_date.isoformat())
+
+        total = self.session.scalar(
+            select(func.count()).select_from(statement.order_by(None).subquery())
+        ) or 0
+        rows = self.session.execute(statement.limit(limit).offset(offset)).all()
+        return [_chunk_evidence_item(chunk, source) for chunk, source in rows], int(total)
+
+    def _chunk_evidence_statement(
+        self,
+        ticker: str,
+        requested_types: set[str],
+    ):
+        source_types = [
+            source_type
+            for source_type in ["news", "disclosure"]
+            if source_type_to_evidence_type(source_type) in requested_types
+        ]
+        return (
+            select(EvidenceChunk, SourceDocument)
+            .join(SourceDocument, SourceDocument.id == EvidenceChunk.source_document_id)
+            .where(
+                EvidenceChunk.ticker == ticker,
+                SourceDocument.source_type.in_(source_types),
             )
-        return items
+            .order_by(
+                func.date(
+                    func.coalesce(EvidenceChunk.published_at, SourceDocument.published_at)
+                ).desc(),
+                EvidenceChunk.evidence_id.desc(),
+            )
+        )
 
     def _price_evidence(self, ticker: str) -> list[StockEvidenceItemResponse]:
         prices = self.session.scalars(
@@ -147,6 +183,25 @@ class EvidenceService:
             )
             for row in prices
         ]
+
+
+def _chunk_evidence_item(
+    chunk: EvidenceChunk,
+    source: SourceDocument,
+) -> StockEvidenceItemResponse:
+    evidence_type = source_type_to_evidence_type(source.source_type)
+    return StockEvidenceItemResponse(
+        id=chunk.evidence_id,
+        type=evidence_type,
+        title=source.title,
+        summary=chunk.chunk_text,
+        source_name=source.source_name,
+        source_url=chunk.source_url or source.source_url,
+        source_identifier=source.external_id,
+        published_at=chunk.published_at or source.published_at,
+        as_of_date=(chunk.published_at.date() if chunk.published_at else None),
+        data_status="available",
+    )
 
 
 def parse_evidence_types(types: str | None) -> set[str]:

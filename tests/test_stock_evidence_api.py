@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -8,7 +9,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import visitors
 from sqlalchemy.sql.schema import Table
 
-from app.orm import EvidenceChunk, FinancialStatement, PriceMetric, RecommendationScore, RiskSignal
+from app.orm import (
+    EvidenceChunk,
+    FinancialStatement,
+    PriceMetric,
+    RecommendationScore,
+    RiskSignal,
+    SourceDocument,
+)
 from app.services.candidate_service import CandidateService
 
 
@@ -313,6 +321,153 @@ def test_stock_evidence_type_filter_and_limit(seeded_api_client: TestClient) -> 
     data = response.json()["data"]
     assert len(data["items"]) <= 2
     assert {item["source_type"] for item in data["items"]}.issubset({"NEWS"})
+
+
+def test_stock_evidence_chunk_lookup_joins_source_documents_once(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    news_source = seeded_session.scalars(
+        select(SourceDocument).where(
+            SourceDocument.ticker == "005930",
+            SourceDocument.source_type == "news",
+        )
+    ).first()
+    assert news_source is not None
+    for index in range(5):
+        seeded_session.add(
+            EvidenceChunk(
+                evidence_id=f"ev_extra_news_005930_{index}",
+                ticker="005930",
+                source_document_id=news_source.id,
+                evidence_type="news",
+                chunk_text=f"추가 뉴스 근거 {index}",
+                source_url=news_source.source_url,
+                published_at=news_source.published_at,
+                fetched_at=news_source.fetched_at,
+                confidence=Decimal("0.9000"),
+                metadata_={"fixture": "n_plus_one_guard"},
+            )
+        )
+    seeded_session.commit()
+
+    engine = seeded_session.get_bind()
+    statements: list[str] = []
+
+    def count_statement(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count_statement)
+    try:
+        response = seeded_api_client.get(
+            "/v1/stocks/005930/evidence",
+            params={"source_type": "NEWS", "limit": 20},
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", count_statement)
+
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert len([item for item in items if item["source_type"] == "NEWS"]) >= 6
+    source_document_selects = [
+        statement
+        for statement in statements
+        if "source_documents" in statement and "evidence_chunks" not in statement
+    ]
+    assert source_document_selects == []
+    assert len(statements) <= 3
+    joined_chunk_selects = [
+        statement
+        for statement in statements
+        if "source_documents" in statement and "evidence_chunks" in statement
+    ]
+    assert joined_chunk_selects
+    assert any("source_type" in statement for statement in joined_chunk_selects)
+    assert any("LIMIT" in statement.upper() for statement in joined_chunk_selects)
+
+
+def test_stock_evidence_chunk_only_filters_dates_and_paginates_in_database(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    seeded_session.execute(delete(EvidenceChunk).where(EvidenceChunk.ticker == "005930"))
+    base_dates = [
+        datetime(2026, 6, 20, 9, tzinfo=timezone.utc),
+        datetime(2026, 6, 21, 9, tzinfo=timezone.utc),
+        datetime(2026, 6, 22, 9, tzinfo=timezone.utc),
+    ]
+    for index, published_at in enumerate(base_dates):
+        source = SourceDocument(
+            ticker="005930",
+            source_type="news",
+            source_name="NAVER_NEWS",
+            source_url=f"https://news.example/{index}",
+            external_id=f"date-pushdown-news-{index}",
+            title=f"date pushdown news {index}",
+            published_at=published_at,
+            fetched_at=published_at,
+            content_hash=f"date-pushdown-news-{index}",
+            raw_content="{}",
+            metadata_={"fixture": "date_pushdown"},
+        )
+        seeded_session.add(source)
+        seeded_session.flush()
+        seeded_session.add(
+            EvidenceChunk(
+                evidence_id=f"ev_date_pushdown_005930_{index}",
+                ticker="005930",
+                source_document_id=source.id,
+                evidence_type="news",
+                chunk_text=f"날짜 필터 근거 {index}",
+                source_url=source.source_url,
+                published_at=published_at,
+                fetched_at=published_at,
+                confidence=Decimal("0.9000"),
+                metadata_={"fixture": "date_pushdown"},
+            )
+        )
+    seeded_session.commit()
+
+    engine = seeded_session.get_bind()
+    statements: list[str] = []
+
+    def capture_statement(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", capture_statement)
+    try:
+        response = seeded_api_client.get(
+            "/v1/stocks/005930/evidence",
+            params={
+                "source_type": "NEWS",
+                "from_date": "2026-06-21",
+                "to_date": "2026-06-22",
+                "limit": 1,
+                "offset": 1,
+            },
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_statement)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["pagination"]["total"] == 2
+    assert data["pagination"]["limit"] == 1
+    assert data["pagination"]["offset"] == 1
+    assert [item["id"] for item in data["items"]] == ["ev_date_pushdown_005930_1"]
+    chunk_selects = [
+        statement
+        for statement in statements
+        if "source_documents" in statement and "evidence_chunks" in statement
+    ]
+    assert chunk_selects
+    assert any(
+        "LIMIT" in statement.upper() and "OFFSET" in statement.upper()
+        for statement in chunk_selects
+    )
+    assert all("source_type" in statement for statement in chunk_selects)
 
 
 def test_price_evidence_has_source_identifier_when_url_is_missing(

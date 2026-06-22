@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from email.utils import parsedate_to_datetime
+from html import unescape
 from typing import Any, Protocol
 
 import boto3
@@ -14,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_session_factory
-from app.orm import Disclosure, NewsItem, SourceDocument, Stock
+from app.orm import Disclosure, EvidenceChunk, NewsItem, SourceDocument, Stock
 from app.services.external.aws_secrets import load_secret_json
 from app.services.external.clients import (
     NAVER_PROVIDER,
@@ -353,6 +356,21 @@ class ProviderIngestionService:
                     "raw_archive_uri": raw_archive_uri,
                 },
             )
+            upsert_evidence_chunk(
+                self.session,
+                source_document=source_document,
+                ticker=ticker,
+                evidence_id=f"ev_opendart_{ticker}_{receipt_no}",
+                evidence_type="disclosure",
+                chunk_text=title,
+                source_url=source_url,
+                published_at=_parse_yyyymmdd(item.get("rcept_dt")),
+                metadata={
+                    "provider": OPENDART_PROVIDER,
+                    "receipt_no": receipt_no,
+                    "raw_archive_uri": raw_archive_uri,
+                },
+            )
             existing = self.session.scalars(
                 select(Disclosure).where(
                     Disclosure.provider == OPENDART_PROVIDER,
@@ -401,7 +419,7 @@ class ProviderIngestionService:
             if not source_url:
                 counts["skipped"] += 1
                 continue
-            title = str(item.get("title") or source_url).strip()
+            title = _clean_provider_text(item.get("title")) or source_url
             published_at = _parse_rfc2822(item.get("pubDate"))
             source_document = upsert_source_document(
                 self.session,
@@ -413,6 +431,20 @@ class ProviderIngestionService:
                 title=title,
                 published_at=published_at,
                 raw_content=json.dumps(item, ensure_ascii=False, sort_keys=True),
+                metadata={
+                    "provider": NAVER_PROVIDER,
+                    "raw_archive_uri": raw_archive_uri,
+                },
+            )
+            upsert_evidence_chunk(
+                self.session,
+                source_document=source_document,
+                ticker=ticker,
+                evidence_id=f"ev_naver_news_{ticker}_{_sha256(source_url)}",
+                evidence_type="news",
+                chunk_text=_clean_provider_text(item.get("description")) or title,
+                source_url=source_url,
+                published_at=published_at,
                 metadata={
                     "provider": NAVER_PROVIDER,
                     "raw_archive_uri": raw_archive_uri,
@@ -808,6 +840,51 @@ def upsert_source_document(
     return source_document
 
 
+def upsert_evidence_chunk(
+    session: Session,
+    *,
+    source_document: SourceDocument,
+    ticker: str,
+    evidence_id: str,
+    evidence_type: str,
+    chunk_text: str,
+    source_url: str | None,
+    published_at: datetime | None,
+    metadata: dict[str, Any],
+) -> EvidenceChunk:
+    existing = session.scalars(
+        select(EvidenceChunk).where(EvidenceChunk.evidence_id == evidence_id)
+    ).first()
+    fetched_at = datetime.now(timezone.utc)
+    cleaned_text = _clean_provider_text(chunk_text) or source_document.title
+    if existing:
+        existing.ticker = ticker
+        existing.source_document_id = source_document.id
+        existing.evidence_type = evidence_type
+        existing.chunk_text = cleaned_text
+        existing.source_url = source_url
+        existing.published_at = published_at
+        existing.fetched_at = fetched_at
+        existing.metadata_ = metadata
+        return existing
+
+    chunk = EvidenceChunk(
+        evidence_id=evidence_id,
+        ticker=ticker,
+        source_document_id=source_document.id,
+        evidence_type=evidence_type,
+        chunk_text=cleaned_text,
+        source_url=source_url,
+        published_at=published_at,
+        fetched_at=fetched_at,
+        confidence=Decimal("0.9000"),
+        metadata_=metadata,
+    )
+    session.add(chunk)
+    session.flush()
+    return chunk
+
+
 def _archiver_from_settings(settings: Settings) -> PayloadArchiver:
     if settings.ingestion_raw_bucket:
         return S3PayloadArchiver(bucket=settings.ingestion_raw_bucket)
@@ -908,6 +985,14 @@ def _request_limits() -> dict[str, int]:
 
 def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _clean_provider_text(value: object) -> str:
+    if value is None:
+        return ""
+    text = unescape(str(value))
+    text = re.sub(r"<[^>]+>", "", text)
+    return " ".join(text.split()).strip()
 
 
 def _string_or_none(value: object) -> str | None:

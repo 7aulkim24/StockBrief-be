@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.orm import Disclosure, IngestionRun, NewsItem, SourceDocument
+from app.orm import Disclosure, EvidenceChunk, IngestionRun, NewsItem, SourceDocument
 from app.services.external.clients import NAVER_PROVIDER, OPENDART_PROVIDER
 from app.services.external.types import ExternalApiResult, ExternalRequest, ExternalResponse
 from app.services import ingestion as ingestion_module
@@ -235,6 +235,14 @@ def test_opendart_ingestion_upserts_disclosures_and_sources(
     assert source_document.source_type == "disclosure"
     assert source_document.metadata_["raw_archive_uri"].startswith("s3://stockbrief-dev-raw/")
 
+    evidence_chunk = seeded_session.scalars(
+        select(EvidenceChunk).where(EvidenceChunk.evidence_id == "ev_opendart_005930_202606180001")
+    ).one()
+    assert evidence_chunk.source_document_id == source_document.id
+    assert evidence_chunk.evidence_type == "disclosure"
+    assert evidence_chunk.chunk_text == "반기보고서"
+    assert evidence_chunk.source_url == "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=202606180001"
+
     run = seeded_session.scalars(
         select(IngestionRun).where(
             IngestionRun.run_id == build_run_id(
@@ -345,10 +353,10 @@ def test_naver_ingestion_upserts_news_and_source_documents(
             payload={
                 "items": [
                     {
-                        "title": "삼성전자 신규 공시 분석",
+                        "title": "<b>삼성전자</b> 신규 &amp; 공시 분석",
                         "originallink": "https://news.example/articles/1",
                         "link": "https://news.example/articles/1",
-                        "description": "테스트 뉴스",
+                        "description": "<b>테스트</b> &amp; 뉴스",
                         "pubDate": "Thu, 18 Jun 2026 09:00:00 +0900",
                     }
                 ]
@@ -382,7 +390,8 @@ def test_naver_ingestion_upserts_news_and_source_documents(
         select(NewsItem).where(NewsItem.source_url == "https://news.example/articles/1")
     ).one()
     assert news_item.provider == NAVER_PROVIDER
-    assert news_item.summary == "테스트 뉴스"
+    assert news_item.title == "삼성전자 신규 & 공시 분석"
+    assert news_item.summary == "<b>테스트</b> &amp; 뉴스"
 
     source_document = seeded_session.scalars(
         select(SourceDocument).where(
@@ -391,6 +400,17 @@ def test_naver_ingestion_upserts_news_and_source_documents(
         )
     ).one()
     assert source_document.source_type == "news"
+    assert source_document.title == "삼성전자 신규 & 공시 분석"
+
+    evidence_chunk = seeded_session.scalars(
+        select(EvidenceChunk).where(
+            EvidenceChunk.evidence_id.startswith("ev_naver_news_005930_")
+        )
+    ).one()
+    assert evidence_chunk.source_document_id == source_document.id
+    assert evidence_chunk.evidence_type == "news"
+    assert evidence_chunk.chunk_text == "테스트 & 뉴스"
+    assert evidence_chunk.source_url == "https://news.example/articles/1"
 
 
 def test_provider_fallback_marks_partial_failed_without_persisting_rows(

@@ -138,6 +138,12 @@ from source_documents
 where ticker = '005930'
 order by created_at desc
 limit 10;
+
+select evidence_id, ticker, evidence_type, published_at, source_url
+from evidence_chunks
+where ticker = '005930'
+order by published_at desc nulls last, fetched_at desc
+limit 10;
 ```
 
 Provider-specific checks:
@@ -161,6 +167,8 @@ Expected result:
 - At least one `ingestion_runs` row exists for each manual provider run.
 - Successful rows end in `succeeded` or a documented `partial_failed` state.
 - Normalized rows reference source documents where applicable.
+- Provider rows create `evidence_chunks` so stock evidence and candidate summary
+  APIs can surface live news and disclosure evidence.
 - Raw provider payloads are referenced through metadata, not copied into PR
   evidence.
 

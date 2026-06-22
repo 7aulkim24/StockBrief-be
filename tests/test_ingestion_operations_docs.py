@@ -39,6 +39,8 @@ def test_ingestion_operations_runbook_covers_storage_dlq_and_logs() -> None:
     assert "select run_id, provider, status, source_date" in runbook
     assert "from ingestion_runs" in runbook
     assert "from source_documents" in runbook
+    assert "from evidence_chunks" in runbook
+    assert "Provider rows create `evidence_chunks`" in runbook
     assert "from disclosures" in runbook
     assert "from news_items" in runbook
     assert "aws s3api list-objects-v2" in runbook

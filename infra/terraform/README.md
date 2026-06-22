@@ -349,6 +349,13 @@ stored in RDS using these first baseline upsert keys:
 - NAVER news: `source_url`, with the source document keyed by `source_name + source_url_hash`
 - Source documents: `source_name + external_id`, fallback `content_hash`
 
+Manual and scheduled ingestion requests are rejected before provider calls when
+they exceed these dev operational limits:
+
+- `tickers`: max 20 per batch
+- `page_count`: max 100
+- `news_display`: max 50
+
 Terraform creates these ingestion resources:
 
 - S3 raw archive bucket when `enable_ingestion_raw_archive = true`

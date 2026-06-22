@@ -28,6 +28,9 @@ from app.services.ingestion_idempotency import IngestionIdempotencyService
 
 
 SUPPORTED_PROVIDERS = (OPENDART_PROVIDER, NAVER_PROVIDER)
+MAX_TICKERS_PER_BATCH = 20
+MAX_OPENDART_PAGE_COUNT = 100
+MAX_NAVER_NEWS_DISPLAY = 50
 PROVIDER_EGRESS_ENDPOINTS = {
     OPENDART_PROVIDER: "https://opendart.fss.or.kr/api/list.json",
     NAVER_PROVIDER: "https://openapi.naver.com/v1/search/news.json",
@@ -153,6 +156,14 @@ class ProviderIngestionService:
             }
         if not request.tickers:
             return {"ok": False, "error": "tickers_required"}
+        limit_violations = _request_limit_violations(request)
+        if limit_violations:
+            return {
+                "ok": False,
+                "error": "request_limit_exceeded",
+                "violations": limit_violations,
+                "limits": _request_limits(),
+            }
 
         results = [self._run_ticker(request=request, ticker=ticker) for ticker in request.tickers]
         failed = [item for item in results if item.status in {"failed", "partial_failed"}]
@@ -800,6 +811,27 @@ def _positive_int(value: object, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _request_limit_violations(request: ProviderIngestionRequest) -> list[dict[str, int | str]]:
+    checks = (
+        ("tickers", len(request.tickers), MAX_TICKERS_PER_BATCH),
+        ("page_count", request.page_count, MAX_OPENDART_PAGE_COUNT),
+        ("news_display", request.news_display, MAX_NAVER_NEWS_DISPLAY),
+    )
+    return [
+        {"field": field, "value": value, "max": max_value}
+        for field, value, max_value in checks
+        if value > max_value
+    ]
+
+
+def _request_limits() -> dict[str, int]:
+    return {
+        "max_tickers": MAX_TICKERS_PER_BATCH,
+        "max_page_count": MAX_OPENDART_PAGE_COUNT,
+        "max_news_display": MAX_NAVER_NEWS_DISPLAY,
+    }
 
 
 def _sha256(value: str) -> str:

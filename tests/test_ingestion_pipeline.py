@@ -91,6 +91,53 @@ def test_provider_ingestion_request_normalizes_event_fields() -> None:
     assert request.news_display == 3
 
 
+def test_provider_ingestion_rejects_requests_above_operational_limits(
+    monkeypatch,
+    seeded_session: Session,
+) -> None:
+    provider_called = False
+
+    def fail_if_called(self, *, ticker: str, corp_code=None, page_count: int = 10):
+        nonlocal provider_called
+        provider_called = True
+        raise AssertionError("provider call should not run when request limits are exceeded")
+
+    monkeypatch.setattr(
+        "app.services.ingestion.OpenDartClient.list_disclosures",
+        fail_if_called,
+    )
+    service = ProviderIngestionService(
+        seeded_session,
+        settings=Settings(OPENDART_API_KEY="test-key"),
+        archiver=NoopPayloadArchiver(),
+    )
+
+    result = service.run_provider_batch(
+        ProviderIngestionRequest(
+            provider=OPENDART_PROVIDER,
+            tickers=[f"{index:06d}" for index in range(21)],
+            source_date="2026-06-18",
+            page_count=101,
+            news_display=51,
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "request_limit_exceeded"
+    assert result["limits"] == {
+        "max_tickers": 20,
+        "max_page_count": 100,
+        "max_news_display": 50,
+    }
+    assert result["violations"] == [
+        {"field": "tickers", "value": 21, "max": 20},
+        {"field": "page_count", "value": 101, "max": 100},
+        {"field": "news_display", "value": 51, "max": 50},
+    ]
+    assert provider_called is False
+    assert seeded_session.scalars(select(IngestionRun)).all() == []
+
+
 def test_opendart_ingestion_upserts_disclosures_and_sources(
     monkeypatch,
     seeded_session: Session,

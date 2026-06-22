@@ -22,10 +22,13 @@ db_skip_final_snapshot     = true
 db_backup_retention_period = 3
 enable_rds_proxy           = true
 
-db_subnet_ids             = []
-db_security_group_ids     = []
-lambda_subnet_ids         = []
-lambda_security_group_ids = []
+db_subnet_ids               = []
+db_security_group_ids       = []
+lambda_subnet_ids           = []
+lambda_security_group_ids   = []
+enable_lambda_nat_egress    = false
+lambda_nat_public_subnet_id  = ""
+lambda_nat_route_subnet_ids = []
 
 enable_operational_alarms       = true
 operational_alarm_email_addresses = []

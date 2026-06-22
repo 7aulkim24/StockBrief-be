@@ -75,19 +75,24 @@ repository variables required by `.github/workflows/backend-dev-deploy.yml`.
    - `db_security_group_ids`
    - `lambda_subnet_ids`
    - `lambda_security_group_ids`
+   - `enable_lambda_nat_egress`
+   - `lambda_nat_public_subnet_id`
+   - `lambda_nat_route_subnet_ids`
    - `cors_allowed_origins`
    - `cognito_callback_urls`
-- `cognito_logout_urls`
-- `cognito_hosted_ui_domain_prefix`
-- `amplify_cognito_redirect_uri`
-- `enable_ingestion_scheduler`
-- `ingestion_schedule_provider`
-- `ingestion_schedule_tickers`
+   - `cognito_logout_urls`
+   - `cognito_hosted_ui_domain_prefix`
+   - `amplify_cognito_redirect_uri`
+   - `enable_ingestion_scheduler`
+   - `ingestion_schedule_provider`
+   - `ingestion_schedule_tickers`
 
    For the first backend-only deployment, keep `enable_amplify = false`. Enable
    it only after the target GitHub organization approves the Amplify GitHub App.
    Also keep `enable_ingestion_scheduler = false` until provider API credentials
    are stored in Secrets Manager and the target ticker list is reviewed.
+   Keep `enable_lambda_nat_egress = false` until live provider ingestion is
+   approved because NAT Gateway creates hourly and data processing charges.
 
 4. If deploying Amplify through Terraform, install the AWS Amplify GitHub App for
    the target region/account and provide a GitHub personal access token through
@@ -229,6 +234,33 @@ Amplify Hosted UI callback setup is intentionally two-step:
    `cognito_logout_urls`, set `amplify_cognito_redirect_uri` to the hosted
    callback URL, and apply again.
 
+## Lambda Provider Egress
+
+Lambda functions attached to a VPC do not receive public IP addresses, even
+when their subnet route table has an Internet Gateway route. Real OpenDART and
+Naver ingestion therefore needs an explicit outbound path.
+
+Terraform can create a NAT Gateway path for the Lambda subnets only when all
+three values are supplied:
+
+```hcl
+enable_lambda_nat_egress    = true
+lambda_nat_public_subnet_id = "subnet-public-for-nat"
+lambda_nat_route_subnet_ids = ["subnet-lambda-a", "subnet-lambda-b"]
+```
+
+The public NAT subnet must keep a route to the VPC Internet Gateway. The route
+subnet IDs are associated with a Terraform-managed private route table whose
+default route points to the NAT Gateway. For the current dev account, choose a
+public subnet that is not in `lambda_nat_route_subnet_ids` so the NAT Gateway
+itself keeps direct Internet Gateway egress. Do not include
+`lambda_nat_public_subnet_id` in `lambda_nat_route_subnet_ids`; Terraform
+preconditions fail the plan when those inputs overlap.
+
+Keep this disabled unless a live provider ingestion smoke test is scheduled.
+When enabled, NAT Gateway hourly and data processing costs continue until the
+toggle is set back to `false` and Terraform is applied.
+
 ## RDS And RDS Proxy
 
 The RDS module creates PostgreSQL when `db_subnet_ids` are provided. RDS Proxy is
@@ -348,6 +380,8 @@ complete and recorded in the PR body:
   `check_provider_egress` from the deployed Lambda environment. S3 Gateway VPC
   Endpoint only covers raw archive writes to S3; it does not provide internet
   egress for OpenDART or Naver.
+  If VPC Lambda egress is required, enable `enable_lambda_nat_egress` only for
+  the smoke window and turn it off after the evidence is collected.
 - S3 raw archive objects are written for the manual run and the SQS DLQ remains
   empty after the smoke test.
 - The schedule expression, provider, and ticker list are reviewed for cost,

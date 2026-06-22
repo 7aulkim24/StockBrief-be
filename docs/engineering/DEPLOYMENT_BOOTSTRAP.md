@@ -222,6 +222,14 @@ Pause checklist:
 - If Amplify preview or production-like web checks are not needed, disable
   branch auto build in the Amplify console. Do not delete the app unless the
   team has approved a full environment teardown.
+- If `enable_lambda_nat_egress` was enabled for live provider ingestion, set it
+  back to `false` and apply Terraform to remove the NAT Gateway and EIP:
+
+  ```bash
+  cd infra/terraform
+  terraform apply -var-file=envs/dev/deploy.auto.tfvars.json
+  ```
+
 - Do not delete Terraform-managed resources from the AWS console. Console
   deletion creates drift that the next apply must repair or import.
 
@@ -252,6 +260,9 @@ Resume checklist:
 
 - Re-enable Amplify branch auto build only if frontend deploy validation is part
   of the day's work.
+- Keep `enable_lambda_nat_egress = false` unless the day's work includes live
+  OpenDART or NAVER ingestion. When it is enabled, run the provider smoke test
+  and turn it off again before pausing the environment.
 - Run a no-change Terraform plan before new infrastructure work:
 
   ```bash

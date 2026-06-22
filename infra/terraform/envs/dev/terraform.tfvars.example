@@ -22,12 +22,15 @@ db_skip_final_snapshot     = true
 db_backup_retention_period = 1
 
 # Fill these after the dev VPC/subnets/security groups are chosen.
-db_subnet_ids             = []
-db_security_group_ids     = []
+db_subnet_ids                = []
+db_security_group_ids        = []
 rds_proxy_security_group_ids = []
-enable_rds_proxy         = false
-lambda_subnet_ids         = []
-lambda_security_group_ids = []
+enable_rds_proxy            = false
+lambda_subnet_ids            = []
+lambda_security_group_ids    = []
+enable_lambda_nat_egress     = false
+lambda_nat_public_subnet_id  = ""
+lambda_nat_route_subnet_ids  = []
 
 enable_operational_alarms       = true
 operational_alarm_email_addresses = []

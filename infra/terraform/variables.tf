@@ -178,6 +178,24 @@ variable "lambda_security_group_ids" {
   default     = []
 }
 
+variable "enable_lambda_nat_egress" {
+  description = "Whether to create a NAT Gateway and private route table associations for Lambda outbound internet egress. Keep false until live provider ingestion is approved because NAT Gateway has hourly and data processing costs."
+  type        = bool
+  default     = false
+}
+
+variable "lambda_nat_public_subnet_id" {
+  description = "Public subnet ID where the NAT Gateway for Lambda provider egress is created. Required only when enable_lambda_nat_egress is true."
+  type        = string
+  default     = ""
+}
+
+variable "lambda_nat_route_subnet_ids" {
+  description = "Subnet IDs that should use the Terraform-managed NAT route table for outbound internet egress. Usually the Lambda subnet IDs."
+  type        = list(string)
+  default     = []
+}
+
 variable "enable_operational_alarms" {
   description = "Whether to create baseline CloudWatch operational alarms for Lambda, API Gateway, and RDS."
   type        = bool

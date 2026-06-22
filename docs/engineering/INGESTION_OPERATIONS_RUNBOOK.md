@@ -30,7 +30,17 @@ payloads into PR comments, shared logs, or issue comments.
   ```
 
 - `enable_ingestion_scheduler` remains `false`.
-- External API credentials are stored in Secrets Manager outside git.
+- External API credentials are stored in Secrets Manager outside git. Use the
+  repository helper so the secret payload is written to a temporary file and
+  removed automatically:
+
+  ```bash
+  scripts/update_external_api_secret.sh --prompt --dry-run
+  scripts/update_external_api_secret.sh --prompt
+  ```
+
+  The script prints Secrets Manager metadata only. Do not use
+  `get-secret-value` in shared logs because it prints the secret payload.
 - Lambda has outbound internet egress for OpenDART and NAVER. Verify it from the
   Lambda runtime after the readiness check:
 

@@ -50,6 +50,27 @@ def test_lambda_packaging_script_targets_backend_repository_root() -> None:
     assert "services/api" not in script
 
 
+def test_external_api_secret_update_script_handles_secret_payload_safely() -> None:
+    script = (REPOSITORY_ROOT / "scripts/update_external_api_secret.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "set -euo pipefail" in script
+    assert "OPENDART_API_KEY" in script
+    assert "NAVER_CLIENT_ID" in script
+    assert "NAVER_CLIENT_SECRET" in script
+    assert "--prompt" in script
+    assert "prompt_secret OPENDART_API_KEY" in script
+    assert "read -r -s -p" in script
+    assert "Missing required environment variables" in script
+    assert "mktemp" in script
+    assert "trap cleanup EXIT" in script
+    assert "aws secretsmanager update-secret" in script
+    assert '--secret-string "file://${tmp_payload}"' in script
+    assert "aws secretsmanager describe-secret" in script
+    assert "get-secret-value" not in script
+
+
 def test_lambda_terraform_resource_tracks_package_hash() -> None:
     module_main = (
         REPOSITORY_ROOT / "infra/terraform/modules/api_lambda/main.tf"
@@ -103,9 +124,10 @@ def test_terraform_readme_documents_external_api_secret_update_runbook() -> None
 
     assert "### External API Credential Update Runbook" in terraform_readme
     assert "terraform output -raw external_api_secret_arn" in terraform_readme
-    assert "/tmp/stockbrief-external-api-secret.json" in terraform_readme
+    assert "scripts/update_external_api_secret.sh --prompt --dry-run" in terraform_readme
+    assert "scripts/update_external_api_secret.sh --prompt" in terraform_readme
     assert "aws secretsmanager update-secret" in terraform_readme
-    assert "--secret-string file:///tmp/stockbrief-external-api-secret.json" in terraform_readme
+    assert "`file://`" in terraform_readme
     assert "aws secretsmanager describe-secret" in terraform_readme
     assert "Do not use `get-secret-value`" in terraform_readme
     assert "aws lambda invoke" in terraform_readme

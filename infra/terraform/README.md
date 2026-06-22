@@ -480,32 +480,30 @@ tokens, or copied secret payloads.
    terraform output -raw external_api_secret_arn
    ```
 
-2. Create a local temporary JSON payload outside the repository:
+2. Do not paste provider credential values into shared logs, shell history, PR
+   comments, or issue comments. Use the script prompt mode when entering real
+   values manually.
 
-   ```json
-   {
-     "OPENDART_API_KEY": "REPLACE_WITH_REAL_VALUE",
-     "NAVER_CLIENT_ID": "REPLACE_WITH_REAL_VALUE",
-     "NAVER_CLIENT_SECRET": "REPLACE_WITH_REAL_VALUE",
-     "KRX_DATA_PATH": ""
-   }
-   ```
-
-   Store it at a temporary path such as
-   `/tmp/stockbrief-external-api-secret.json`. Delete the file after the update.
-
-3. Update the current Secrets Manager value without printing the payload:
+3. Validate the payload locally without calling AWS:
 
    ```bash
-   aws secretsmanager update-secret \
-     --secret-id "$(terraform output -raw external_api_secret_arn)" \
-     --secret-string file:///tmp/stockbrief-external-api-secret.json \
-     --profile stockbrief-dev \
-     --region ap-northeast-2
+   scripts/update_external_api_secret.sh --prompt --dry-run
    ```
 
-4. Verify metadata only. Do not use `get-secret-value` in shared logs or PR
-   evidence because it prints secret material:
+4. Update the current Secrets Manager value without printing the payload:
+
+   ```bash
+   scripts/update_external_api_secret.sh --prompt
+   ```
+
+   The script resolves `external_api_secret_arn` from Terraform output by
+   default, writes a temporary JSON payload outside git, passes it to
+   `aws secretsmanager update-secret` with `file://`, and deletes the temporary
+   payload automatically.
+
+5. Verify metadata only. Do not use `get-secret-value` in shared logs or PR
+   evidence because it prints secret material. The script prints this metadata
+   after a successful update; to re-check it manually:
 
    ```bash
    aws secretsmanager describe-secret \
@@ -514,13 +512,14 @@ tokens, or copied secret payloads.
      --region ap-northeast-2
    ```
 
-5. Delete the temporary payload file after the update:
+6. If you used environment variables instead of `--prompt`, remove the provider
+   credentials from the shell session:
 
    ```bash
-   rm /tmp/stockbrief-external-api-secret.json
+   unset OPENDART_API_KEY NAVER_CLIENT_ID NAVER_CLIENT_SECRET KRX_DATA_PATH
    ```
 
-6. Run one manual Lambda ingestion per provider before enabling any scheduler.
+7. Run one manual Lambda ingestion per provider before enabling any scheduler.
    Replace `YYYY-MM-DD` with the business date you want to verify:
 
    ```bash
@@ -541,7 +540,7 @@ tokens, or copied secret payloads.
      --region ap-northeast-2
    ```
 
-7. Treat credentials as present only after the Lambda responses no longer report
+8. Treat credentials as present only after the Lambda responses no longer report
    `missing_api_key` for `OPENDART_API_KEY` or
    `NAVER_CLIENT_ID/NAVER_CLIENT_SECRET`. Credential presence is necessary but
    not sufficient for live ingestion; the Lambda private subnet must also have

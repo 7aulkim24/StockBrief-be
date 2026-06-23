@@ -131,9 +131,14 @@ variable "db_skip_final_snapshot" {
 }
 
 variable "db_backup_retention_period" {
-  description = "Days to retain automated RDS backups. 1 is sufficient for dev; 7 for prod."
+  description = "Days to retain automated RDS backups. Use 0 to disable automated backups in dev/test; valid range is 0 to 35."
   type        = number
   default     = 7
+
+  validation {
+    condition     = var.db_backup_retention_period >= 0 && var.db_backup_retention_period <= 35
+    error_message = "db_backup_retention_period must be between 0 and 35 days. Use 0 only when disabling automated backups is approved for dev/test."
+  }
 }
 
 variable "vpc_id" {

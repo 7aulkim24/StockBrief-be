@@ -74,6 +74,25 @@ variable "bedrock_chat_region" {
   default     = ""
 }
 
+variable "bedrock_chat_inference_profile_foundation_model_regions" {
+  description = "Foundation model Regions associated with the configured Bedrock inference profile. Keep this in sync with the AWS Bedrock profile routing list."
+  type        = list(string)
+  default = [
+    "ap-southeast-2",
+    "ap-northeast-1",
+    "ap-south-1",
+    "ap-northeast-2",
+    "ap-southeast-1",
+    "ap-northeast-3",
+  ]
+}
+
+variable "bedrock_chat_inference_profile_extra_foundation_model_arns" {
+  description = "Additional foundation model ARNs required by the configured Bedrock inference profile, such as global profile ARN patterns that cannot be represented by a Region list."
+  type        = list(string)
+  default     = []
+}
+
 variable "amplify_repository_url" {
   description = "Repository URL for Amplify app connection. Placeholder for MVP."
   type        = string

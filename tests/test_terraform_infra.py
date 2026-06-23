@@ -118,7 +118,7 @@ def test_api_gateway_stage_has_access_logs() -> None:
     assert "access_log_settings" in api_lambda_tf
     assert "format = jsonencode" in api_lambda_tf
     assert 'variable "jwt_authorizer_enabled"' in api_lambda_variables_tf
-    assert "jwt_authorizer_enabled    = true" in root_main_tf
+    assert "jwt_authorizer_enabled  = true" in root_main_tf
 
 
 def test_amplify_hosted_callback_can_be_overridden_after_domain_creation() -> None:
@@ -158,7 +158,8 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     assert "CHAT_PROVIDER" in root_main_tf
     assert "BEDROCK_CHAT_MODEL_ID" in root_main_tf
     assert "BEDROCK_CHAT_REGION" in root_main_tf
-    assert "bedrock_chat_model_arns" in root_main_tf
+    assert "bedrock_chat_foundation_model_arns" in root_main_tf
+    assert "bedrock_chat_inference_profile_arn" in root_main_tf
     assert "bedrock_chat_uses_inference_profile" in root_main_tf
     assert 'startswith(var.bedrock_chat_model_id, "apac.")' in root_main_tf
     assert 'startswith(var.bedrock_chat_model_id, "global.")' in root_main_tf
@@ -166,14 +167,26 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     assert 'replace(var.bedrock_chat_model_id, "/^(apac|global)\\\\./", "")' in root_main_tf
     assert "foundation-model/${local.bedrock_chat_base_foundation_model_id}" in root_main_tf
     assert "inference-profile/${var.bedrock_chat_model_id}" in root_main_tf
+    assert "bedrock_chat_inference_profile_foundation_model_regions" in root_main_tf
+    assert "bedrock_chat_inference_profile_extra_foundation_model_arns" in root_main_tf
+    assert "bedrock_chat_all_profile_foundation_model_arns" in root_main_tf
+    assert "arn:aws:bedrock:${region}::foundation-model" in root_main_tf
+    assert "concat(" in root_main_tf
     assert "data.aws_caller_identity.current.account_id" in root_main_tf
     assert "var.chat_provider == \"bedrock\"" in root_main_tf
 
-    assert 'variable "bedrock_chat_model_arns"' in api_lambda_variables_tf
+    assert 'variable "bedrock_chat_foundation_model_arns"' in api_lambda_variables_tf
+    assert 'variable "bedrock_chat_inference_profile_arn"' in api_lambda_variables_tf
     assert "bedrock:InvokeModel" in api_lambda_tf
-    assert "length(var.bedrock_chat_model_arns) == 0 ? 0 : 1" in api_lambda_tf
+    assert "bedrock:InferenceProfileArn" in api_lambda_tf
+    assert "InvokeConfiguredInferenceProfile" in api_lambda_tf
+    assert "InvokeConfiguredFoundationModels" in api_lambda_tf
+    assert "length(var.bedrock_chat_foundation_model_arns) == 0" in api_lambda_tf
     assert "api-bedrock-chat-invoke" in api_lambda_tf
     assert "profile ARN" in terraform_readme
+    assert "bedrock_chat_inference_profile_foundation_model_regions" in terraform_readme
+    assert "bedrock_chat_inference_profile_extra_foundation_model_arns" in terraform_readme
+    assert "ap-southeast-2" in terraform_readme
     assert "provider on `mock`" in terraform_readme
 
 

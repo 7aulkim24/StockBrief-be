@@ -58,16 +58,41 @@ resource "aws_iam_role_policy" "agentcore_invoke" {
 }
 
 data "aws_iam_policy_document" "bedrock_chat_invoke" {
-  count = length(var.bedrock_chat_model_arns) == 0 ? 0 : 1
+  count = length(var.bedrock_chat_foundation_model_arns) == 0 && var.bedrock_chat_inference_profile_arn == "" ? 0 : 1
 
-  statement {
-    actions   = ["bedrock:InvokeModel"]
-    resources = var.bedrock_chat_model_arns
+  dynamic "statement" {
+    for_each = var.bedrock_chat_inference_profile_arn == "" ? [] : [var.bedrock_chat_inference_profile_arn]
+
+    content {
+      sid       = "InvokeConfiguredInferenceProfile"
+      actions   = ["bedrock:InvokeModel"]
+      resources = [statement.value]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.bedrock_chat_foundation_model_arns) == 0 ? [] : [var.bedrock_chat_foundation_model_arns]
+
+    content {
+      sid       = "InvokeConfiguredFoundationModels"
+      actions   = ["bedrock:InvokeModel"]
+      resources = statement.value
+
+      dynamic "condition" {
+        for_each = var.bedrock_chat_inference_profile_arn == "" ? [] : [var.bedrock_chat_inference_profile_arn]
+
+        content {
+          test     = "StringEquals"
+          variable = "bedrock:InferenceProfileArn"
+          values   = [condition.value]
+        }
+      }
+    }
   }
 }
 
 resource "aws_iam_role_policy" "bedrock_chat_invoke" {
-  count = length(var.bedrock_chat_model_arns) == 0 ? 0 : 1
+  count = length(var.bedrock_chat_foundation_model_arns) == 0 && var.bedrock_chat_inference_profile_arn == "" ? 0 : 1
 
   name   = "${var.name_prefix}-api-bedrock-chat-invoke"
   role   = aws_iam_role.api_lambda.id

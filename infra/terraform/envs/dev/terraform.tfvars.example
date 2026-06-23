@@ -6,6 +6,15 @@ cors_allowed_origins    = "http://localhost:3000,http://127.0.0.1:3000"
 chat_provider           = "mock"
 bedrock_chat_model_id   = "apac.amazon.nova-micro-v1:0"
 bedrock_chat_region     = ""
+bedrock_chat_inference_profile_foundation_model_regions = [
+  "ap-southeast-2",
+  "ap-northeast-1",
+  "ap-south-1",
+  "ap-northeast-2",
+  "ap-southeast-1",
+  "ap-northeast-3",
+]
+bedrock_chat_inference_profile_extra_foundation_model_arns = []
 
 enable_amplify         = false
 amplify_repository_url = "https://github.com/example/StockBrief-fe"

@@ -79,6 +79,12 @@ variable "agentcore_runtime_arn" {
   default = ""
 }
 
+variable "bedrock_chat_model_arn" {
+  description = "Foundation model ARN the direct Bedrock chat provider can invoke. Leave empty to avoid Bedrock Runtime permissions."
+  type        = string
+  default     = ""
+}
+
 variable "environment_variables" {
   type = map(string)
 }

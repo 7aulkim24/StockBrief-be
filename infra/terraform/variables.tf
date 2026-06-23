@@ -51,6 +51,29 @@ variable "cors_allowed_origins" {
   default     = "http://localhost:3000,http://127.0.0.1:3000"
 }
 
+variable "chat_provider" {
+  description = "Chat explanation provider. Keep mock unless Bedrock invocation is explicitly approved."
+  type        = string
+  default     = "mock"
+
+  validation {
+    condition     = contains(["mock", "bedrock"], var.chat_provider)
+    error_message = "chat_provider must be either mock or bedrock."
+  }
+}
+
+variable "bedrock_chat_model_id" {
+  description = "Foundation model ID used by the direct Bedrock chat provider when chat_provider is bedrock."
+  type        = string
+  default     = "amazon.nova-micro-v1:0"
+}
+
+variable "bedrock_chat_region" {
+  description = "Optional Bedrock Runtime region override. Leave empty to use aws_region."
+  type        = string
+  default     = ""
+}
+
 variable "amplify_repository_url" {
   description = "Repository URL for Amplify app connection. Placeholder for MVP."
   type        = string

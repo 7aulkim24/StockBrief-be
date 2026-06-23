@@ -140,6 +140,35 @@ def test_api_lambda_role_has_vpc_and_agentcore_invoke_permissions() -> None:
     assert "bedrock-agentcore:InvokeAgentRuntime" in api_lambda_tf
 
 
+def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
+    root_main_tf = _read("main.tf")
+    variables_tf = _read("variables.tf")
+    api_lambda_tf = _read("modules/api_lambda/main.tf")
+    api_lambda_variables_tf = _read("modules/api_lambda/variables.tf")
+    dev_tfvars = _read("envs/dev/terraform.tfvars.example")
+    terraform_readme = _read("README.md")
+
+    assert 'variable "chat_provider"' in variables_tf
+    assert 'contains(["mock", "bedrock"], var.chat_provider)' in variables_tf
+    assert 'variable "bedrock_chat_model_id"' in variables_tf
+    assert 'variable "bedrock_chat_region"' in variables_tf
+    assert 'chat_provider           = "mock"' in dev_tfvars
+    assert 'bedrock_chat_model_id   = "amazon.nova-micro-v1:0"' in dev_tfvars
+
+    assert "CHAT_PROVIDER" in root_main_tf
+    assert "BEDROCK_CHAT_MODEL_ID" in root_main_tf
+    assert "BEDROCK_CHAT_REGION" in root_main_tf
+    assert "bedrock_chat_model_arn" in root_main_tf
+    assert "foundation-model/${var.bedrock_chat_model_id}" in root_main_tf
+    assert "var.chat_provider == \"bedrock\"" in root_main_tf
+
+    assert 'variable "bedrock_chat_model_arn"' in api_lambda_variables_tf
+    assert "bedrock:InvokeModel" in api_lambda_tf
+    assert "var.bedrock_chat_model_arn == \"\" ? 0 : 1" in api_lambda_tf
+    assert "api-bedrock-chat-invoke" in api_lambda_tf
+    assert "provider on `mock`" in terraform_readme
+
+
 def test_ingestion_pipeline_resources_are_wired_with_scheduler_disabled_by_default() -> None:
     ingestion_tf = _read("ingestion.tf")
     root_main_tf = _read("main.tf")

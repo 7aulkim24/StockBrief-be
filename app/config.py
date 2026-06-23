@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     cognito_issuer: str = Field(default="", validation_alias="COGNITO_ISSUER")
     cognito_jwks_url: str = Field(default="", validation_alias="COGNITO_JWKS_URL")
     chat_provider: Literal["mock", "bedrock"] = Field(default="mock", validation_alias="CHAT_PROVIDER")
+    bedrock_chat_model_id: str = Field(default="amazon.nova-micro-v1:0", validation_alias="BEDROCK_CHAT_MODEL_ID")
+    bedrock_chat_region: str = Field(default="", validation_alias="BEDROCK_CHAT_REGION")
+    bedrock_chat_max_tokens: int = Field(default=700, validation_alias="BEDROCK_CHAT_MAX_TOKENS")
+    bedrock_chat_temperature: float = Field(default=0.2, validation_alias="BEDROCK_CHAT_TEMPERATURE")
+    bedrock_chat_timeout_seconds: float = Field(default=8.0, validation_alias="BEDROCK_CHAT_TIMEOUT_SECONDS")
 
     model_config = SettingsConfigDict(
         env_file=".env",

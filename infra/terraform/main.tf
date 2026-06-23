@@ -31,6 +31,9 @@ locals {
   effective_rds_proxy_security_group_ids = length(var.rds_proxy_security_group_ids) > 0 ? var.rds_proxy_security_group_ids : (
     local.managed_networking_enabled ? [aws_security_group.rds_proxy[0].id] : local.effective_rds_security_group_ids
   )
+
+  effective_bedrock_chat_region     = var.bedrock_chat_region == "" ? var.aws_region : var.bedrock_chat_region
+  bedrock_chat_foundation_model_arn = var.bedrock_chat_model_id == "" ? "" : "arn:aws:bedrock:${local.effective_bedrock_chat_region}::foundation-model/${var.bedrock_chat_model_id}"
 }
 
 resource "aws_security_group" "lambda" {
@@ -197,6 +200,7 @@ module "api_lambda" {
   ingestion_raw_bucket_arn  = try(aws_s3_bucket.ingestion_raw[0].arn, "")
   ingestion_raw_kms_key_arn = try(aws_kms_key.ingestion_raw[0].arn, "")
   agentcore_runtime_arn     = module.agentcore_runtime.runtime_arn
+  bedrock_chat_model_arn    = var.chat_provider == "bedrock" ? local.bedrock_chat_foundation_model_arn : ""
   jwt_authorizer_enabled    = true
   jwt_authorizer_issuer     = module.cognito.issuer
   jwt_authorizer_audience   = [module.cognito.app_client_id]
@@ -207,6 +211,9 @@ module "api_lambda" {
     SERVICE_VERSION       = "0.1.0"
     API_BASE_PATH         = "/v1"
     CORS_ALLOWED_ORIGINS  = var.cors_allowed_origins
+    CHAT_PROVIDER         = var.chat_provider
+    BEDROCK_CHAT_MODEL_ID = var.bedrock_chat_model_id
+    BEDROCK_CHAT_REGION   = local.effective_bedrock_chat_region
     COGNITO_USER_POOL_ID  = module.cognito.user_pool_id
     COGNITO_APP_CLIENT_ID = module.cognito.app_client_id
     COGNITO_ISSUER        = module.cognito.issuer

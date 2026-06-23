@@ -150,10 +150,14 @@ Provider configuration:
 
 - `CHAT_PROVIDER=mock` is the default local and dev-safe provider. It uses the
   deterministic composer and does not call external AI services.
-- `CHAT_PROVIDER=bedrock` is reserved for the Bedrock direct provider. Until the
-  provider is implemented and enabled, the API must fail closed with
-  `CHAT_PROVIDER_UNAVAILABLE` instead of silently falling back or making an
-  unreviewed model call.
+- `CHAT_PROVIDER=bedrock` enables the direct Bedrock Runtime provider. It must
+  use an approved `BEDROCK_CHAT_MODEL_ID`, preserve deterministic citations and
+  policy status from the local composer, and fail closed with
+  `CHAT_PROVIDER_UNAVAILABLE` if Bedrock is unavailable, returns an empty answer,
+  or emits prohibited financial wording.
+- Do not silently fall back from Bedrock to mock in production-like validation.
+  A Bedrock provider failure should be visible as an upstream provider error so
+  operators can distinguish model/runtime issues from deterministic mock output.
 
 ## 8. Safety Validation Checklist
 

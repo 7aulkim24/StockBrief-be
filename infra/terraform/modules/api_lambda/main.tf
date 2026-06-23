@@ -57,6 +57,23 @@ resource "aws_iam_role_policy" "agentcore_invoke" {
   policy = data.aws_iam_policy_document.agentcore_invoke[0].json
 }
 
+data "aws_iam_policy_document" "bedrock_chat_invoke" {
+  count = var.bedrock_chat_model_arn == "" ? 0 : 1
+
+  statement {
+    actions   = ["bedrock:InvokeModel"]
+    resources = [var.bedrock_chat_model_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "bedrock_chat_invoke" {
+  count = var.bedrock_chat_model_arn == "" ? 0 : 1
+
+  name   = "${var.name_prefix}-api-bedrock-chat-invoke"
+  role   = aws_iam_role.api_lambda.id
+  policy = data.aws_iam_policy_document.bedrock_chat_invoke[0].json
+}
+
 data "aws_iam_policy_document" "ingestion_raw_archive" {
   count = var.ingestion_raw_bucket_name == "" ? 0 : 1
 

@@ -439,6 +439,22 @@ agentcore deploy --dry-run
 agentcore deploy --diff
 ```
 
+## Direct Bedrock Chat Provider
+
+The backend defaults to `chat_provider = "mock"` so local/dev smoke tests do not
+call external AI services. To validate the direct Bedrock provider, set:
+
+```hcl
+chat_provider         = "bedrock"
+bedrock_chat_model_id = "amazon.nova-micro-v1:0"
+bedrock_chat_region   = "" # empty uses aws_region
+```
+
+When `chat_provider = "bedrock"`, the API Lambda role receives
+`bedrock:InvokeModel` only for the configured foundation model ARN. Keep the
+provider on `mock` unless Bedrock model access, expected request volume, and
+cost are approved for the day's validation.
+
 ## Secrets Manager
 
 Secret values must be filled outside git. The placeholder secret names are:
@@ -466,6 +482,9 @@ Non-secret runtime values remain Lambda or Amplify environment variables:
 - `API_BASE_PATH`
 - `DATABASE_SECRET_ARN`
 - `CORS_ALLOWED_ORIGINS`
+- `CHAT_PROVIDER`
+- `BEDROCK_CHAT_MODEL_ID`
+- `BEDROCK_CHAT_REGION`
 - `NEXT_PUBLIC_API_BASE_URL`
 - `NEXT_PUBLIC_APP_NAME`
 - `COGNITO_USER_POOL_ID`

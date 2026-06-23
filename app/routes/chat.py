@@ -41,8 +41,11 @@ def chat(
     stock, score = candidate_service.candidate_row(request.ticker)
     candidate = candidate_service.candidate_response(stock, score)
     evidence = EvidenceService(session).items(request.ticker)
+    current_user_id = current_user.id if current_user is not None else None
+    session.close()
+
     try:
-        provider = chat_provider_for(settings.chat_provider)
+        provider = chat_provider_for(settings.chat_provider, settings=settings)
         response = provider.compose(
             ChatProviderInput(
                 message=request.message,
@@ -58,10 +61,10 @@ def chat(
                 "message": str(exc),
             },
         ) from exc
-    if current_user is not None:
+    if current_user_id is not None:
         response = _persist_chat_exchange(
             session=session,
-            user=current_user,
+            user_id=current_user_id,
             request=request,
             response=response,
         )
@@ -108,7 +111,7 @@ def _policy_action(policy_status: str) -> str:
 def _persist_chat_exchange(
     *,
     session: Session,
-    user: User,
+    user_id: uuid.UUID,
     request: ChatRequest,
     response: ChatResponse,
 ) -> ChatResponse:
@@ -116,13 +119,13 @@ def _persist_chat_exchange(
     chat_session = session.scalars(
         select(ChatSession).where(
             ChatSession.session_id == session_id,
-            ChatSession.user_id == user.id,
+            ChatSession.user_id == user_id,
         )
     ).first()
     if chat_session is None:
         chat_session = ChatSession(
             session_id=session_id,
-            user_id=user.id,
+            user_id=user_id,
             title=request.title,
             ticker=request.ticker,
         )

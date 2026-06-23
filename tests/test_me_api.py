@@ -435,3 +435,73 @@ def test_authenticated_chat_persists_session_and_messages(seeded_session: Sessio
         )
     finally:
         app.dependency_overrides.clear()
+
+
+def test_authenticated_bedrock_chat_persists_after_read_session_close(
+    seeded_session: Session,
+    monkeypatch,
+) -> None:
+    user = _auth_user(seeded_session, "cognito-sub-bedrock-chat")
+
+    class FakeBedrockClient:
+        def converse(self, **kwargs):
+            return {
+                "output": {
+                    "message": {
+                        "content": [
+                            {
+                                "text": (
+                                    "삼성전자(005930)는 공개 데이터 기준 검토 대상입니다. "
+                                    "[ev_mock_005930_disclosure] 근거를 확인하세요."
+                                )
+                            }
+                        ]
+                    }
+                }
+            }
+
+    def override_current_user() -> User:
+        return user
+
+    def override_db_session():
+        yield seeded_session
+
+    def override_settings() -> Settings:
+        return Settings(
+            chat_provider="bedrock",
+            bedrock_chat_model_id="amazon.nova-micro-v1:0",
+            bedrock_chat_region="ap-northeast-2",
+        )
+
+    monkeypatch.setattr(
+        "app.services.chat.providers.boto3.client",
+        lambda *args, **kwargs: FakeBedrockClient(),
+    )
+    app.dependency_overrides[get_current_user] = override_current_user
+    app.dependency_overrides[get_optional_current_user] = override_current_user
+    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_settings] = override_settings
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/v1/chat",
+            json={
+                "ticker": "005930",
+                "message": "왜 추천됐나요?",
+                "title": "Bedrock 삼성전자 설명",
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["message"] == "bedrock Agent 응답을 반환했습니다."
+        assert "공개 데이터 기준 검토 대상" in payload["data"]["answer"]
+        messages = seeded_session.scalars(
+            select(ChatMessage).where(ChatMessage.session_id == payload["data"]["session_id"])
+        ).all()
+        assert [message.role for message in messages] == ["user", "assistant"]
+        assistant_message = next(message for message in messages if message.role == "assistant")
+        assert "공개 데이터 기준 검토 대상" in assistant_message.content
+        assert assistant_message.citations
+    finally:
+        app.dependency_overrides.clear()

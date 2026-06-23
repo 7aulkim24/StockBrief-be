@@ -285,3 +285,48 @@ def test_secret_versions_do_not_reclaim_manually_rotated_current_values() -> Non
     secrets_tf = _read("modules/secrets/main.tf")
 
     assert secrets_tf.count("ignore_changes = all") == 2
+
+
+def test_managed_security_group_egress_is_port_scoped() -> None:
+    root_main_tf = _read("main.tf")
+
+    assert 'resource "aws_security_group_rule" "lambda_https_egress"' in root_main_tf
+    assert 'resource "aws_security_group_rule" "lambda_database_egress"' in root_main_tf
+    assert 'resource "aws_security_group_rule" "rds_proxy_to_rds"' in root_main_tf
+    assert 'resource "aws_security_group_rule" "rds_proxy_from_lambda"' in root_main_tf
+    assert 'resource "aws_security_group_rule" "rds_from_managed_database_client"' in root_main_tf
+    assert 'description       = "HTTPS outbound for Cognito, external APIs, and AWS public endpoints"' in root_main_tf
+    assert 'description              = "PostgreSQL to managed database endpoint"' in root_main_tf
+    assert 'description              = "PostgreSQL to RDS"' in root_main_tf
+    assert 'protocol          = "-1"' not in root_main_tf
+    assert 'protocol                 = "-1"' not in root_main_tf
+    assert 'cidr_blocks       = ["0.0.0.0/0"]' in root_main_tf
+    assert "from_port         = 443" in root_main_tf
+    assert "to_port           = 443" in root_main_tf
+    assert "from_port                = 5432" in root_main_tf
+    assert "to_port                  = 5432" in root_main_tf
+    assert "source_security_group_id = aws_security_group.rds[0].id" in root_main_tf
+
+
+def test_rds_proxy_operational_alarms_are_defined_and_documented() -> None:
+    alarms_tf = _read("alarms.tf")
+    rds_proxy_outputs_tf = _read("modules/rds_proxy/outputs.tf")
+    terraform_readme = _read("README.md")
+
+    assert 'output "proxy_name"' in rds_proxy_outputs_tf
+    assert 'resource "aws_cloudwatch_metric_alarm" "rds_proxy_borrow_latency_high"' in alarms_tf
+    assert (
+        'resource "aws_cloudwatch_metric_alarm" "rds_proxy_database_connection_failures"'
+        in alarms_tf
+    )
+    assert 'resource "aws_cloudwatch_metric_alarm" "rds_proxy_client_auth_failures"' in alarms_tf
+    assert alarms_tf.count("ProxyName = module.rds_proxy.proxy_name") == 3
+    assert "DatabaseConnectionsBorrowLatency" in alarms_tf
+    assert "DatabaseConnectionsSetupFailed" in alarms_tf
+    assert "ClientConnectionsSetupFailedAuth" in alarms_tf
+    assert "threshold           = 1000000" in alarms_tf
+    assert "RDS Proxy | Database connection borrow latency > 1 second" in terraform_readme
+    assert "Some RDS Proxy metrics are not visible until after the" in terraform_readme
+    assert "Confirm every SNS email subscription is in `Confirmed` status" in terraform_readme
+    assert "Prefer a team or operations group alias" in terraform_readme
+    assert "Terraform plan and state metadata" in terraform_readme

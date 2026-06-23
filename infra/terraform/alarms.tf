@@ -204,3 +204,69 @@ resource "aws_cloudwatch_metric_alarm" "rds_free_storage_low" {
     DBInstanceIdentifier = module.rds.db_instance_identifier
   }
 }
+
+resource "aws_cloudwatch_metric_alarm" "rds_proxy_borrow_latency_high" {
+  count = var.enable_operational_alarms && var.enable_rds_proxy && length(var.db_subnet_ids) > 0 ? 1 : 0
+
+  alarm_name          = "${local.name_prefix}-rds-proxy-borrow-latency-high"
+  alarm_description   = "RDS Proxy database connection borrow latency is greater than 1 second."
+  namespace           = "AWS/RDS"
+  metric_name         = "DatabaseConnectionsBorrowLatency"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 3
+  datapoints_to_alarm = 2
+  period              = 60
+  statistic           = "Average"
+  threshold           = 1000000
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.operational_alarm_actions
+  ok_actions          = local.operational_alarm_actions
+
+  dimensions = {
+    ProxyName = module.rds_proxy.proxy_name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_proxy_database_connection_failures" {
+  count = var.enable_operational_alarms && var.enable_rds_proxy && length(var.db_subnet_ids) > 0 ? 1 : 0
+
+  alarm_name          = "${local.name_prefix}-rds-proxy-db-connection-failures"
+  alarm_description   = "RDS Proxy database connection setup failures were detected."
+  namespace           = "AWS/RDS"
+  metric_name         = "DatabaseConnectionsSetupFailed"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.operational_alarm_actions
+  ok_actions          = local.operational_alarm_actions
+
+  dimensions = {
+    ProxyName = module.rds_proxy.proxy_name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_proxy_client_auth_failures" {
+  count = var.enable_operational_alarms && var.enable_rds_proxy && length(var.db_subnet_ids) > 0 ? 1 : 0
+
+  alarm_name          = "${local.name_prefix}-rds-proxy-client-auth-failures"
+  alarm_description   = "RDS Proxy client connection authentication failures were detected."
+  namespace           = "AWS/RDS"
+  metric_name         = "ClientConnectionsSetupFailedAuth"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.operational_alarm_actions
+  ok_actions          = local.operational_alarm_actions
+
+  dimensions = {
+    ProxyName = module.rds_proxy.proxy_name
+  }
+}

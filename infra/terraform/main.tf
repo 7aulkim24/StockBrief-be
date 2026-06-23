@@ -57,14 +57,6 @@ resource "aws_security_group" "lambda" {
   name        = "${local.name_prefix}-lambda-sg"
   description = "Lambda egress for StockBrief API"
   vpc_id      = var.vpc_id
-
-  egress {
-    description = "Allow outbound HTTPS and database connections"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 }
 
 resource "aws_security_group" "rds_proxy" {
@@ -73,22 +65,6 @@ resource "aws_security_group" "rds_proxy" {
   name        = "${local.name_prefix}-rds-proxy-sg"
   description = "RDS Proxy access from StockBrief API Lambda"
   vpc_id      = var.vpc_id
-
-  ingress {
-    description     = "PostgreSQL from Lambda"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.lambda[0].id]
-  }
-
-  egress {
-    description = "Allow outbound connections to RDS"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 }
 
 resource "aws_security_group" "rds" {
@@ -97,14 +73,6 @@ resource "aws_security_group" "rds" {
   name        = "${local.name_prefix}-rds-sg"
   description = "RDS PostgreSQL access from StockBrief API"
   vpc_id      = var.vpc_id
-
-  ingress {
-    description     = var.enable_rds_proxy ? "PostgreSQL from RDS Proxy" : "PostgreSQL from Lambda"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [var.enable_rds_proxy ? aws_security_group.rds_proxy[0].id : aws_security_group.lambda[0].id]
-  }
 }
 
 resource "aws_security_group" "secretsmanager_endpoint" {
@@ -113,14 +81,78 @@ resource "aws_security_group" "secretsmanager_endpoint" {
   name        = "${local.name_prefix}-secretsmanager-vpce-sg"
   description = "Secrets Manager interface endpoint access from StockBrief API Lambda"
   vpc_id      = var.vpc_id
+}
 
-  ingress {
-    description     = "HTTPS from Lambda"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.lambda[0].id]
-  }
+resource "aws_security_group_rule" "lambda_https_egress" {
+  count = local.managed_networking_enabled ? 1 : 0
+
+  type              = "egress"
+  description       = "HTTPS outbound for Cognito, external APIs, and AWS public endpoints"
+  security_group_id = aws_security_group.lambda[0].id
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
+resource "aws_security_group_rule" "lambda_database_egress" {
+  count = local.managed_networking_enabled ? 1 : 0
+
+  type                     = "egress"
+  description              = "PostgreSQL to managed database endpoint"
+  security_group_id        = aws_security_group.lambda[0].id
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = var.enable_rds_proxy ? aws_security_group.rds_proxy[0].id : aws_security_group.rds[0].id
+}
+
+resource "aws_security_group_rule" "rds_proxy_from_lambda" {
+  count = local.managed_networking_enabled ? 1 : 0
+
+  type                     = "ingress"
+  description              = "PostgreSQL from Lambda"
+  security_group_id        = aws_security_group.rds_proxy[0].id
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.lambda[0].id
+}
+
+resource "aws_security_group_rule" "rds_proxy_to_rds" {
+  count = local.managed_networking_enabled ? 1 : 0
+
+  type                     = "egress"
+  description              = "PostgreSQL to RDS"
+  security_group_id        = aws_security_group.rds_proxy[0].id
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.rds[0].id
+}
+
+resource "aws_security_group_rule" "rds_from_managed_database_client" {
+  count = local.managed_networking_enabled ? 1 : 0
+
+  type                     = "ingress"
+  description              = var.enable_rds_proxy ? "PostgreSQL from RDS Proxy" : "PostgreSQL from Lambda"
+  security_group_id        = aws_security_group.rds[0].id
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = var.enable_rds_proxy ? aws_security_group.rds_proxy[0].id : aws_security_group.lambda[0].id
+}
+
+resource "aws_security_group_rule" "secretsmanager_endpoint_from_lambda" {
+  count = local.managed_networking_enabled ? 1 : 0
+
+  type                     = "ingress"
+  description              = "HTTPS from Lambda"
+  security_group_id        = aws_security_group.secretsmanager_endpoint[0].id
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.lambda[0].id
 }
 
 resource "aws_vpc_endpoint" "secretsmanager" {

@@ -661,11 +661,32 @@ is `true`:
 | API Gateway HTTP API | p99 latency > 5 seconds for 2 of 3 minutes |
 | RDS PostgreSQL | CPU utilization > 80% for 2 of 3 minutes |
 | RDS PostgreSQL | Free storage below 2 GiB for 2 of 3 minutes |
+| RDS Proxy | Database connection borrow latency > 1 second for 2 of 3 minutes |
+| RDS Proxy | Any database connection setup failure |
+| RDS Proxy | Any client authentication setup failure |
 
 Set `operational_alarm_email_addresses` to subscribe email recipients through
 SNS. Email subscriptions require each recipient to confirm the AWS SNS
 subscription email before notifications are delivered. Leave the list empty to
 create alarms without notification actions.
+
+RDS Proxy alarms are created only when `enable_rds_proxy = true` and RDS subnets
+are configured. The proxy alarms use the CloudWatch `AWS/RDS` namespace with the
+`ProxyName` dimension. Some RDS Proxy metrics are not visible until after the
+first successful proxy connection, so verify metric ingestion after a deployed
+Lambda request actually connects through the proxy.
+
+Operational alarm rollout checklist:
+
+- Confirm every SNS email subscription is in `Confirmed` status before relying
+  on notifications.
+- Prefer a team or operations group alias over a personal email address for
+  `operational_alarm_email_addresses`.
+- Remember that email endpoints appear in Terraform plan and state metadata.
+- After each dev/staging/prod apply, verify that API Gateway, Lambda, RDS, and
+  RDS Proxy alarms show recent metric datapoints in CloudWatch.
+- Record whether the default thresholds need tuning for the environment's real
+  traffic profile before enabling the same values in production.
 
 ## GitHub Actions Dev Deployment
 

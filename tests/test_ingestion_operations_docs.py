@@ -30,6 +30,10 @@ def test_ingestion_operations_runbook_exists_and_covers_manual_smoke() -> None:
     assert '"stockbrief_operation":"get_ingestion_status"' in runbook
     assert "summary.run_status_counts.succeeded" in runbook
     assert "latest_evidence[]" in runbook
+    assert '"stockbrief_operation":"reconcile_stale_ingestion_runs"' in runbook
+    assert '"dry_run":true' in runbook
+    assert '"dry_run":false' in runbook
+    assert "stale_started_run_reconciled" in runbook
     assert "Replace `YYYY-MM-DD`" in runbook
     assert "with the business date you want to" in runbook
     assert "missing_api_key" in runbook

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -21,6 +21,7 @@ from app.services.ingestion import (
     build_request_hash,
     build_run_id,
     check_raw_archive_write,
+    reconcile_stale_started_runs,
     summarize_ingestion_status,
     hydrate_external_api_settings,
     handle_ingestion_event,
@@ -574,6 +575,90 @@ def test_ingestion_status_summarizes_recent_runs_and_latest_evidence(
     assert latest_news[0]["source_type"] == "news"
     assert latest_news[0]["published_at"] is not None
     assert latest_news[0]["fetched_at"] is not None
+
+
+def test_reconcile_stale_started_runs_defaults_to_dry_run_and_filters_scope(
+    seeded_session: Session,
+) -> None:
+    now = datetime(2026, 6, 23, 9, 0, tzinfo=timezone.utc)
+    stale_run = IngestionRun(
+        run_id="stale-naver-005930",
+        job_type="news",
+        provider=NAVER_PROVIDER,
+        target_scope={"ticker": "005930", "source_date": "2026-06-22"},
+        status="started",
+        input_hash="stale-naver-005930-hash",
+        started_at=now - timedelta(hours=3),
+        result_counts={},
+    )
+    fresh_run = IngestionRun(
+        run_id="fresh-naver-005930",
+        job_type="news",
+        provider=NAVER_PROVIDER,
+        target_scope={"ticker": "005930", "source_date": "2026-06-23"},
+        status="started",
+        input_hash="fresh-naver-005930-hash",
+        started_at=now - timedelta(minutes=10),
+        result_counts={},
+    )
+    other_ticker_stale_run = IngestionRun(
+        run_id="stale-naver-000660",
+        job_type="news",
+        provider=NAVER_PROVIDER,
+        target_scope={"ticker": "000660", "source_date": "2026-06-22"},
+        status="started",
+        input_hash="stale-naver-000660-hash",
+        started_at=now - timedelta(hours=3),
+        result_counts={},
+    )
+    seeded_session.add_all([stale_run, fresh_run, other_ticker_stale_run])
+    seeded_session.commit()
+
+    dry_run = reconcile_stale_started_runs(
+        seeded_session,
+        max_age_minutes=60,
+        tickers=["005930"],
+        providers=[NAVER_PROVIDER],
+        now=now,
+    )
+
+    assert dry_run["ok"] is True
+    assert dry_run["dry_run"] is True
+    assert dry_run["stale_count"] == 1
+    assert dry_run["updated_count"] == 0
+    assert dry_run["stale_runs"][0]["run_id"] == "stale-naver-005930"
+    assert dry_run["stale_runs"][0]["age_seconds"] == 10800
+    seeded_session.refresh(stale_run)
+    assert stale_run.status == "started"
+    assert stale_run.completed_at is None
+    assert stale_run.error_summary is None
+
+    applied = reconcile_stale_started_runs(
+        seeded_session,
+        max_age_minutes=60,
+        tickers=["005930"],
+        providers=[NAVER_PROVIDER],
+        dry_run=False,
+        now=now,
+    )
+
+    assert applied["dry_run"] is False
+    assert applied["stale_count"] == 1
+    assert applied["updated_count"] == 1
+    assert applied["stale_runs"][0]["status"] == "failed"
+    seeded_session.refresh(stale_run)
+    seeded_session.refresh(fresh_run)
+    seeded_session.refresh(other_ticker_stale_run)
+    assert stale_run.status == "failed"
+    assert stale_run.completed_at is not None
+    assert stale_run.completed_at.replace(tzinfo=timezone.utc) == now
+    assert stale_run.error_summary == {
+        "code": "stale_started_run_reconciled",
+        "max_age_minutes": 60,
+        "reconciled_at": "2026-06-23T09:00:00+00:00",
+    }
+    assert fresh_run.status == "started"
+    assert other_ticker_stale_run.status == "started"
 
 
 def test_provider_fallback_marks_partial_failed_without_persisting_rows(

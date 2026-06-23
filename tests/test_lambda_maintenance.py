@@ -27,6 +27,7 @@ def test_maintenance_rejects_unknown_operation() -> None:
     assert "check_provider_egress" in result["supported_operations"]
     assert "ingest_provider_batch" in result["supported_operations"]
     assert "get_ingestion_status" in result["supported_operations"]
+    assert "reconcile_stale_ingestion_runs" in result["supported_operations"]
 
 
 def test_maintenance_routes_ingestion_readiness_operation(monkeypatch) -> None:
@@ -111,4 +112,25 @@ def test_maintenance_routes_ingestion_status_operation(monkeypatch) -> None:
     result = handle_maintenance_event(event)
 
     assert result == {"ok": True, "summary": {"recent_run_count": 1}}
+    assert calls == [event]
+
+
+def test_maintenance_routes_stale_ingestion_reconcile_operation(monkeypatch) -> None:
+    calls = []
+
+    def fake_reconcile(event):
+        calls.append(event)
+        return {"ok": True, "dry_run": True, "stale_count": 1}
+
+    monkeypatch.setattr("app.maintenance.reconcile_stale_ingestion_runs", fake_reconcile)
+
+    event = {
+        "stockbrief_operation": "reconcile_stale_ingestion_runs",
+        "tickers": ["005930"],
+        "max_age_minutes": 60,
+        "dry_run": True,
+    }
+    result = handle_maintenance_event(event)
+
+    assert result == {"ok": True, "dry_run": True, "stale_count": 1}
     assert calls == [event]

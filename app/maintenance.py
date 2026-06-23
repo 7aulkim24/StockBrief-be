@@ -11,6 +11,7 @@ from app.services.ingestion import (
     check_raw_archive_write,
     get_ingestion_status,
     handle_ingestion_event,
+    reconcile_stale_ingestion_runs,
 )
 
 
@@ -32,6 +33,8 @@ def handle_maintenance_event(event: dict[str, object]) -> dict[str, object]:
         return handle_ingestion_event(event)
     if operation == "get_ingestion_status":
         return get_ingestion_status(event)
+    if operation == "reconcile_stale_ingestion_runs":
+        return reconcile_stale_ingestion_runs(event)
     return {
         "ok": False,
         "error": "unsupported_operation",
@@ -44,6 +47,7 @@ def handle_maintenance_event(event: dict[str, object]) -> dict[str, object]:
             "check_provider_egress",
             "ingest_provider_batch",
             "get_ingestion_status",
+            "reconcile_stale_ingestion_runs",
         ],
     }
 

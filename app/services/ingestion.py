@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from html import unescape
@@ -504,6 +504,19 @@ def get_ingestion_status(event: dict[str, object] | None = None) -> dict[str, An
         )
 
 
+def reconcile_stale_ingestion_runs(event: dict[str, object] | None = None) -> dict[str, Any]:
+    request = event or {}
+    with get_session_factory()() as session:
+        return reconcile_stale_started_runs(
+            session,
+            max_age_minutes=_stale_run_max_age_minutes(request.get("max_age_minutes")),
+            tickers=_event_tickers(request),
+            providers=_event_providers(request),
+            limit=_reconcile_limit(request.get("limit")),
+            dry_run=_event_bool(request.get("dry_run"), default=True),
+        )
+
+
 def summarize_ingestion_status(
     session: Session,
     *,
@@ -542,6 +555,64 @@ def summarize_ingestion_status(
         "latest_evidence": [
             _evidence_status_dict(chunk=chunk, source=source)
             for chunk, source in latest_evidence
+        ],
+    }
+
+
+def reconcile_stale_started_runs(
+    session: Session,
+    *,
+    max_age_minutes: int = 60,
+    tickers: list[str] | None = None,
+    providers: list[str] | None = None,
+    limit: int = 50,
+    dry_run: bool = True,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    observed_at = _ensure_aware_datetime(now or datetime.now(timezone.utc))
+    cutoff = observed_at - timedelta(minutes=max_age_minutes)
+    normalized_tickers = _unique_tickers(tickers or [])
+    normalized_providers = _unique_providers(providers or [])
+    statement = (
+        select(IngestionRun)
+        .where(
+            IngestionRun.status == "started",
+            IngestionRun.started_at <= cutoff,
+        )
+        .order_by(IngestionRun.started_at.asc(), IngestionRun.run_id.asc())
+        .limit(limit)
+    )
+    if normalized_tickers:
+        statement = statement.where(
+            IngestionRun.target_scope["ticker"].as_string().in_(normalized_tickers)
+        )
+    if normalized_providers:
+        statement = statement.where(IngestionRun.provider.in_(normalized_providers))
+    stale_runs = session.scalars(statement).all()
+    if not dry_run:
+        for run in stale_runs:
+            run.status = "failed"
+            run.completed_at = observed_at
+            run.error_summary = {
+                "code": "stale_started_run_reconciled",
+                "max_age_minutes": max_age_minutes,
+                "reconciled_at": _isoformat(observed_at),
+            }
+        session.commit()
+        for run in stale_runs:
+            session.refresh(run)
+    return {
+        "ok": True,
+        "dry_run": dry_run,
+        "max_age_minutes": max_age_minutes,
+        "cutoff_started_before": _isoformat(cutoff),
+        "ticker_filter": normalized_tickers,
+        "provider_filter": normalized_providers,
+        "stale_count": len(stale_runs),
+        "updated_count": 0 if dry_run else len(stale_runs),
+        "stale_runs": [
+            _stale_run_dict(run=run, observed_at=observed_at)
+            for run in stale_runs
         ],
     }
 
@@ -1008,9 +1079,53 @@ def _event_tickers(event: dict[str, object]) -> list[str]:
     return []
 
 
+def _event_providers(event: dict[str, object]) -> list[str]:
+    providers_value = event.get("providers")
+    if isinstance(providers_value, str):
+        values = [item.strip() for item in providers_value.split(",") if item.strip()]
+    elif isinstance(providers_value, list):
+        values = [str(item).strip() for item in providers_value if str(item).strip()]
+    else:
+        provider_value = event.get("provider")
+        values = [str(provider_value).strip()] if isinstance(provider_value, str) and provider_value.strip() else []
+    return [_normalize_provider(value) for value in values]
+
+
+def _event_bool(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y"}:
+            return True
+        if normalized in {"false", "0", "no", "n"}:
+            return False
+    return default
+
+
 def _status_limit(value: object) -> int:
     limit = _positive_int(value, default=10)
     return min(limit, 50)
+
+
+def _reconcile_limit(value: object) -> int:
+    limit = _positive_int(value, default=50)
+    return min(limit, 100)
+
+
+def _stale_run_max_age_minutes(value: object) -> int:
+    return max(_positive_int(value, default=60), 1)
+
+
+def _unique_providers(providers: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for provider in providers:
+        if provider in seen:
+            continue
+        seen.add(provider)
+        unique.append(provider)
+    return unique
 
 
 def _run_status_counts(runs: list[IngestionRun]) -> dict[str, int]:
@@ -1041,6 +1156,28 @@ def _run_status_dict(run: IngestionRun) -> dict[str, Any]:
     }
 
 
+def _stale_run_dict(
+    *,
+    run: IngestionRun,
+    observed_at: datetime,
+) -> dict[str, Any]:
+    target_scope = dict(run.target_scope or {})
+    started_at = _ensure_aware_datetime(run.started_at)
+    age_seconds = int((observed_at - started_at).total_seconds())
+    return {
+        "run_id": run.run_id,
+        "provider": run.provider,
+        "job_type": run.job_type,
+        "status": run.status,
+        "ticker": target_scope.get("ticker"),
+        "source_date": target_scope.get("source_date"),
+        "started_at": _isoformat(run.started_at),
+        "completed_at": _isoformat(run.completed_at),
+        "age_seconds": age_seconds,
+        "error_summary": run.error_summary,
+    }
+
+
 def _evidence_status_dict(
     *,
     chunk: EvidenceChunk,
@@ -1061,9 +1198,13 @@ def _evidence_status_dict(
 def _isoformat(value: datetime | None) -> str | None:
     if value is None:
         return None
+    return _ensure_aware_datetime(value).isoformat()
+
+
+def _ensure_aware_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc).isoformat()
-    return value.astimezone(timezone.utc).isoformat()
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _parse_yyyymmdd(value: Any) -> datetime | None:

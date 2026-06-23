@@ -148,6 +148,49 @@ Expected result:
 - The response does not include API keys, client secrets, tokens, or full raw
   provider payloads.
 
+## Stale Started Run Reconciliation
+
+If `get_ingestion_status` shows old `started` rows, first run reconciliation in
+dry-run mode. This checks stale rows without changing the database:
+
+```bash
+aws lambda invoke \
+  --function-name stockbrief-dev-api \
+  --payload '{"stockbrief_operation":"reconcile_stale_ingestion_runs","tickers":["005930"],"providers":["NAVER_NEWS","OpenDART"],"max_age_minutes":60,"dry_run":true}' \
+  --cli-binary-format raw-in-base64-out \
+  /tmp/stockbrief-stale-ingestion-dry-run-response.json \
+  --profile stockbrief-dev \
+  --region ap-northeast-2
+```
+
+Expected dry-run result:
+
+- Response `ok` is `true`.
+- `dry_run` is `true`.
+- `stale_runs[]` contains only the requested ticker/provider scope.
+- `updated_count` is `0`.
+
+After reviewing the dry-run output, mark stale `started` runs as `failed` only
+when they are older than the chosen threshold and no Lambda invocation is still
+running:
+
+```bash
+aws lambda invoke \
+  --function-name stockbrief-dev-api \
+  --payload '{"stockbrief_operation":"reconcile_stale_ingestion_runs","tickers":["005930"],"providers":["NAVER_NEWS","OpenDART"],"max_age_minutes":60,"dry_run":false}' \
+  --cli-binary-format raw-in-base64-out \
+  /tmp/stockbrief-stale-ingestion-apply-response.json \
+  --profile stockbrief-dev \
+  --region ap-northeast-2
+```
+
+Expected apply result:
+
+- `updated_count` matches the reviewed stale row count.
+- Updated runs have `status = failed` and
+  `error_summary.code = stale_started_run_reconciled`.
+- A follow-up `get_ingestion_status` no longer shows those runs as `started`.
+
 ## Database Verification
 
 Use a read-only SQL client or a temporary operator session. Do not write manual
@@ -298,6 +341,8 @@ Do not enable EventBridge Scheduler until all conditions are true:
 
 - Both OpenDART and NAVER manual smoke runs have completed with understood
   results.
+- Stale `started` ingestion runs have been reviewed with
+  `reconcile_stale_ingestion_runs` dry-run and reconciled if needed.
 - `ingestion_runs`, normalized provider tables, `source_documents`, S3 raw
   archive, DLQ, and CloudWatch logs have been checked.
 - Provider rate limits, ticker count, and expected execution frequency have

@@ -13,6 +13,7 @@ from typing import Any, Protocol
 import boto3
 from botocore.config import Config
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -852,21 +853,24 @@ def upsert_evidence_chunk(
     published_at: datetime | None,
     metadata: dict[str, Any],
 ) -> EvidenceChunk:
+    def apply_values(target: EvidenceChunk) -> EvidenceChunk:
+        target.ticker = ticker
+        target.source_document_id = source_document.id
+        target.evidence_type = evidence_type
+        target.chunk_text = cleaned_text
+        target.source_url = source_url
+        target.published_at = published_at
+        target.fetched_at = fetched_at
+        target.metadata_ = metadata
+        return target
+
     existing = session.scalars(
         select(EvidenceChunk).where(EvidenceChunk.evidence_id == evidence_id)
     ).first()
     fetched_at = datetime.now(timezone.utc)
     cleaned_text = _clean_provider_text(chunk_text) or source_document.title
     if existing:
-        existing.ticker = ticker
-        existing.source_document_id = source_document.id
-        existing.evidence_type = evidence_type
-        existing.chunk_text = cleaned_text
-        existing.source_url = source_url
-        existing.published_at = published_at
-        existing.fetched_at = fetched_at
-        existing.metadata_ = metadata
-        return existing
+        return apply_values(existing)
 
     chunk = EvidenceChunk(
         evidence_id=evidence_id,
@@ -880,9 +884,18 @@ def upsert_evidence_chunk(
         confidence=Decimal("0.9000"),
         metadata_=metadata,
     )
-    session.add(chunk)
-    session.flush()
-    return chunk
+    try:
+        with session.begin_nested():
+            session.add(chunk)
+            session.flush()
+        return chunk
+    except IntegrityError:
+        existing_after_conflict = session.scalars(
+            select(EvidenceChunk).where(EvidenceChunk.evidence_id == evidence_id)
+        ).first()
+        if existing_after_conflict is None:
+            raise
+        return apply_values(existing_after_conflict)
 
 
 def _archiver_from_settings(settings: Settings) -> PayloadArchiver:

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -22,6 +23,7 @@ from app.services.ingestion import (
     check_raw_archive_write,
     hydrate_external_api_settings,
     handle_ingestion_event,
+    upsert_evidence_chunk,
 )
 
 
@@ -253,6 +255,89 @@ def test_opendart_ingestion_upserts_disclosures_and_sources(
         )
     ).one()
     assert run.status == "succeeded"
+
+
+def test_evidence_chunk_upsert_recovers_from_concurrent_insert_conflict(
+    monkeypatch,
+    seeded_session: Session,
+) -> None:
+    source_document = seeded_session.scalars(select(SourceDocument)).first()
+    assert source_document is not None
+    assert (
+        seeded_session.scalars(
+            select(EvidenceChunk).where(EvidenceChunk.evidence_id == "ev_concurrent")
+        ).first()
+        is None
+    )
+
+    original_scalars = seeded_session.scalars
+    injected = {"done": False}
+
+    class ConcurrentInsertResult:
+        def __init__(self, result):
+            self.result = result
+
+        def first(self):
+            value = self.result.first()
+            if value is None and not injected["done"]:
+                injected["done"] = True
+                seeded_session.execute(
+                    insert(EvidenceChunk).values(
+                        evidence_id="ev_concurrent",
+                        ticker="005930",
+                        source_document_id=source_document.id,
+                        evidence_type="news",
+                        chunk_text="old text",
+                        source_url="https://example.com/old",
+                        published_at=None,
+                        fetched_at=datetime.now(timezone.utc),
+                        confidence=0.9,
+                        metadata_={"provider": "race"},
+                    )
+                )
+            return value
+
+        def __getattr__(self, name: str):
+            return getattr(self.result, name)
+
+    def scalars_with_concurrent_insert(statement, *args, **kwargs):
+        result = original_scalars(statement, *args, **kwargs)
+        if (
+            not injected["done"]
+            and "evidence_chunks" in str(statement)
+            and "ev_concurrent" in str(statement)
+        ):
+            return ConcurrentInsertResult(result)
+        return result
+
+    monkeypatch.setattr(
+        seeded_session,
+        "scalars",
+        scalars_with_concurrent_insert,
+    )
+
+    chunk = upsert_evidence_chunk(
+        seeded_session,
+        source_document=source_document,
+        ticker="005930",
+        evidence_id="ev_concurrent",
+        evidence_type="disclosure",
+        chunk_text="new text",
+        source_url="https://example.com/new",
+        published_at=None,
+        metadata={"provider": OPENDART_PROVIDER},
+    )
+
+    assert chunk.evidence_id == "ev_concurrent"
+    assert chunk.evidence_type == "disclosure"
+    assert chunk.chunk_text == "new text"
+    assert chunk.source_url == "https://example.com/new"
+    assert chunk.metadata_ == {"provider": OPENDART_PROVIDER}
+    assert len(
+        seeded_session.scalars(
+            select(EvidenceChunk).where(EvidenceChunk.evidence_id == "ev_concurrent")
+        ).all()
+    ) == 1
 
 
 def test_explicit_run_id_is_scoped_per_ticker_in_batch(

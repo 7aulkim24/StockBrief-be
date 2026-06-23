@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import get_optional_current_user
+from app.config import Settings, get_settings
 from app.db import get_db_session
 from app.models import (
     ChatCitationContract,
@@ -18,7 +19,7 @@ from app.models import (
 from app.orm import ChatMessage, ChatSession, User
 from app.routes.common import COMMON_ERROR_RESPONSES, request_id
 from app.services.candidate_service import CandidateService
-from app.services.chat import compose_chat_answer
+from app.services.chat import ChatProviderInput, ChatProviderUnavailable, chat_provider_for
 from app.services.evidence_service import EvidenceService, contract_source_type
 
 router = APIRouter()
@@ -34,16 +35,29 @@ def chat(
     request: ChatRequest,
     session: Session = Depends(get_db_session),
     current_user: User | None = Depends(get_optional_current_user),
+    settings: Settings = Depends(get_settings),
 ) -> ChatContractResponse:
     candidate_service = CandidateService(session)
     stock, score = candidate_service.candidate_row(request.ticker)
     candidate = candidate_service.candidate_response(stock, score)
     evidence = EvidenceService(session).items(request.ticker)
-    response = compose_chat_answer(
-        message=request.message,
-        candidate=candidate,
-        evidence=evidence,
-    )
+    try:
+        provider = chat_provider_for(settings.chat_provider)
+        response = provider.compose(
+            ChatProviderInput(
+                message=request.message,
+                candidate=candidate,
+                evidence=evidence,
+            )
+        )
+    except ChatProviderUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "CHAT_PROVIDER_UNAVAILABLE",
+                "message": str(exc),
+            },
+        ) from exc
     if current_user is not None:
         response = _persist_chat_exchange(
             session=session,
@@ -53,7 +67,7 @@ def chat(
         )
     return ChatContractResponse(
         data=_chat_contract_data(request=request, response=response),
-        message="mock Agent 응답을 반환했습니다.",
+        message=f"{provider.name} Agent 응답을 반환했습니다.",
         request_id=request_id(http_request),
     )
 

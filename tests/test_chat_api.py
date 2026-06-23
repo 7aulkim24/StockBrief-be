@@ -5,7 +5,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.config import Settings, get_settings
+from app.main import app
 from app.orm import EvidenceChunk, FinancialStatement, PriceMetric, RecommendationScore
+from app.services.chat import ChatProviderUnavailable, chat_provider_for
 
 
 PROHIBITED_KOREAN_OUTPUT_TERMS = [
@@ -51,6 +54,73 @@ def test_chat_allowed_answer_uses_candidate_evidence_and_risks(
         data["citations"][0]
     )
     assert any(citation["published_at"] for citation in data["citations"])
+
+
+def test_chat_mock_provider_preserves_existing_contract(
+    seeded_api_client: TestClient,
+) -> None:
+    response = seeded_api_client.post(
+        "/v1/chat",
+        json={"ticker": "005930", "message": "왜 추천됐나요?"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "mock Agent 응답을 반환했습니다."
+
+
+def test_chat_bedrock_provider_fails_closed_until_enabled(
+    seeded_api_client: TestClient,
+) -> None:
+    def override_settings() -> Settings:
+        return Settings(chat_provider="bedrock")
+
+    app.dependency_overrides[get_settings] = override_settings
+    try:
+        response = seeded_api_client.post(
+            "/v1/chat",
+            json={"ticker": "005930", "message": "왜 추천됐나요?"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "CHAT_PROVIDER_UNAVAILABLE"
+    assert "Bedrock chat provider is not enabled" in payload["error"]["message"]
+
+
+def test_chat_provider_factory_failure_returns_fail_closed_response(
+    seeded_api_client: TestClient,
+    monkeypatch,
+) -> None:
+    def unavailable_provider_factory(name: str):
+        raise ChatProviderUnavailable(f"Unsupported chat provider: {name}")
+
+    monkeypatch.setattr(
+        "app.routes.chat.chat_provider_for",
+        unavailable_provider_factory,
+    )
+
+    response = seeded_api_client.post(
+        "/v1/chat",
+        json={"ticker": "005930", "message": "왜 추천됐나요?"},
+    )
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "CHAT_PROVIDER_UNAVAILABLE"
+    assert "Unsupported chat provider" in payload["error"]["message"]
+
+
+def test_chat_provider_factory_rejects_unknown_provider() -> None:
+    try:
+        chat_provider_for("unknown")
+    except ChatProviderUnavailable as exc:
+        assert "Unsupported chat provider" in str(exc)
+    else:
+        raise AssertionError("unknown chat provider should fail closed")
 
 
 def test_chat_redirects_trade_decision_request(seeded_api_client: TestClient) -> None:

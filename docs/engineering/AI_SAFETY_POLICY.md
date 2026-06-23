@@ -146,6 +146,15 @@ Cite evidence IDs or source URLs when making factual claims.
 Use neutral Korean language.
 ```
 
+Provider configuration:
+
+- `CHAT_PROVIDER=mock` is the default local and dev-safe provider. It uses the
+  deterministic composer and does not call external AI services.
+- `CHAT_PROVIDER=bedrock` is reserved for the Bedrock direct provider. Until the
+  provider is implemented and enabled, the API must fail closed with
+  `CHAT_PROVIDER_UNAVAILABLE` instead of silently falling back or making an
+  unreviewed model call.
+
 ## 8. Safety Validation Checklist
 
 - Does the answer cite evidence IDs or source URLs when making factual claims?

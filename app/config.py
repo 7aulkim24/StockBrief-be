@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,11 +36,13 @@ class Settings(BaseSettings):
     cognito_app_client_id: str = Field(default="", validation_alias="COGNITO_APP_CLIENT_ID")
     cognito_issuer: str = Field(default="", validation_alias="COGNITO_ISSUER")
     cognito_jwks_url: str = Field(default="", validation_alias="COGNITO_JWKS_URL")
+    chat_provider: Literal["mock", "bedrock"] = Field(default="mock", validation_alias="CHAT_PROVIDER")
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     @property

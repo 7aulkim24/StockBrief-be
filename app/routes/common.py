@@ -9,6 +9,7 @@ from app.services.response_helpers import pagination
 COMMON_ERROR_RESPONSES = {
     400: {"model": ApiErrorResponse, "description": "Request validation failed."},
     404: {"model": ApiErrorResponse, "description": "Resource was not found."},
+    503: {"model": ApiErrorResponse, "description": "Upstream provider is unavailable."},
 }
 
 PROHIBITED_OUTPUTS = [

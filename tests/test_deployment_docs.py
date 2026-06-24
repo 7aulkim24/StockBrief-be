@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -69,6 +71,93 @@ def test_backend_ci_checks_lambda_packaging_script_on_pr() -> None:
     assert 'test "$first_hash" = "$second_hash"' in workflow
 
 
+def test_backend_dev_deploy_checks_assumed_account_matches_backend() -> None:
+    workflow = (
+        REPOSITORY_ROOT / ".github/workflows/backend-dev-deploy.yml"
+    ).read_text(encoding="utf-8")
+    deployment_doc = (
+        REPOSITORY_ROOT / "docs/engineering/DEPLOYMENT_BOOTSTRAP.md"
+    ).read_text(encoding="utf-8")
+
+    assert "Verify deploy account matches Terraform backend" in workflow
+    assert 'DEPLOY_ROLE_ARN: ${{ vars.AWS_DEV_DEPLOY_ROLE_ARN }}' in workflow
+    assert "scripts/verify_deploy_account_matches_backend.sh" in workflow
+    assert "Before Terraform init, `backend-dev-deploy` compares the account" in deployment_doc
+    assert "cannot accidentally deploy against a backend that" in deployment_doc
+    assert "During account transition work, this failure is the expected guardrail" in deployment_doc
+    assert "not as a deployment regression" in deployment_doc
+
+
+def test_deploy_account_guard_accepts_matching_accounts(tmp_path: Path) -> None:
+    result = _run_deploy_account_guard(
+        tmp_path,
+        assumed_account="123456789012",
+        role_arn="arn:aws:iam::123456789012:role/stockbrief-dev-github-actions-deploy",
+        state_bucket="stockbrief-terraform-state-123456789012-ap-northeast-2",
+    )
+
+    assert result.returncode == 0
+    assert "Verified deploy account 123456789012 matches" in result.stdout
+
+
+def test_deploy_account_guard_rejects_unparseable_role_arn(tmp_path: Path) -> None:
+    result = _run_deploy_account_guard(
+        tmp_path,
+        assumed_account="123456789012",
+        role_arn="not-an-iam-role-arn",
+        state_bucket="stockbrief-terraform-state-123456789012-ap-northeast-2",
+    )
+
+    assert result.returncode == 1
+    assert "Could not parse AWS account id from AWS_DEV_DEPLOY_ROLE_ARN" in result.stdout
+
+
+def test_deploy_account_guard_rejects_unparseable_backend_bucket(tmp_path: Path) -> None:
+    result = _run_deploy_account_guard(
+        tmp_path,
+        assumed_account="123456789012",
+        role_arn="arn:aws:iam::123456789012:role/stockbrief-dev-github-actions-deploy",
+        state_bucket="unexpected-state-bucket",
+    )
+
+    assert result.returncode == 1
+    assert "Could not parse AWS account id from Terraform backend bucket" in result.stdout
+
+
+def test_deploy_account_guard_rejects_assumed_role_account_mismatch(
+    tmp_path: Path,
+) -> None:
+    result = _run_deploy_account_guard(
+        tmp_path,
+        assumed_account="999999999999",
+        role_arn="arn:aws:iam::123456789012:role/stockbrief-dev-github-actions-deploy",
+        state_bucket="stockbrief-terraform-state-999999999999-ap-northeast-2",
+    )
+
+    assert result.returncode == 1
+    assert (
+        "Assumed AWS account 999999999999 does not match deploy role account 123456789012"
+        in result.stdout
+    )
+
+
+def test_deploy_account_guard_rejects_assumed_backend_account_mismatch(
+    tmp_path: Path,
+) -> None:
+    result = _run_deploy_account_guard(
+        tmp_path,
+        assumed_account="123456789012",
+        role_arn="arn:aws:iam::123456789012:role/stockbrief-dev-github-actions-deploy",
+        state_bucket="stockbrief-terraform-state-999999999999-ap-northeast-2",
+    )
+
+    assert result.returncode == 1
+    assert (
+        "Assumed AWS account 123456789012 does not match Terraform backend account 999999999999"
+        in result.stdout
+    )
+
+
 def test_external_api_secret_update_script_handles_secret_payload_safely() -> None:
     script = (REPOSITORY_ROOT / "scripts/update_external_api_secret.sh").read_text(
         encoding="utf-8"
@@ -120,6 +209,40 @@ def _markdown_section(markdown: str, heading: str) -> str:
     if next_heading == -1:
         return markdown[start:]
     return markdown[start:next_heading]
+
+
+def _run_deploy_account_guard(
+    tmp_path: Path,
+    *,
+    assumed_account: str,
+    role_arn: str,
+    state_bucket: str,
+) -> subprocess.CompletedProcess[str]:
+    backend_file = tmp_path / "backend.tf"
+    backend_file.write_text(
+        f'''
+terraform {{
+  backend "s3" {{
+    bucket = "{state_bucket}"
+  }}
+}}
+''',
+        encoding="utf-8",
+    )
+
+    return subprocess.run(
+        ["bash", "scripts/verify_deploy_account_matches_backend.sh"],
+        cwd=REPOSITORY_ROOT,
+        env={
+            **os.environ,
+            "ASSUMED_AWS_ACCOUNT_ID": assumed_account,
+            "DEPLOY_ROLE_ARN": role_arn,
+            "TF_BACKEND_FILE": str(backend_file),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def _bootstrap_policy_document(script: str) -> dict[str, object]:

@@ -172,6 +172,16 @@ backend committed in that file. If a new environment needs a different backend,
 create a dedicated workflow or update the backend configuration in the same PR
 as the environment tfvars change.
 
+Before Terraform init, `backend-dev-deploy` compares the account assumed from
+`AWS_DEV_DEPLOY_ROLE_ARN` with the account encoded in the committed Terraform
+state bucket name. The workflow stops immediately if those accounts differ, so
+a repository variable update cannot accidentally deploy against a backend that
+still belongs to another AWS account.
+During account transition work, this failure is the expected guardrail when
+`AWS_DEV_DEPLOY_ROLE_ARN` has moved to a new account but `backend.tf` still
+points at the previous state bucket. Treat the failure as a configuration
+handoff signal, not as a deployment regression.
+
 `AWS_DEV_DEPLOY_ROLE_ARN` and `OPERATIONAL_ALARM_EMAILS_JSON` may live as
 repository variables or `dev` environment variables. Prefer environment
 variables when the repository has multiple deploy environments. Add GitHub

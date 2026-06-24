@@ -33,6 +33,11 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEV_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Verify deploy account matches Terraform backend
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_DEV_DEPLOY_ROLE_ARN }}
+        run: scripts/verify_deploy_account_matches_backend.sh
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"

@@ -95,6 +95,15 @@ repository variables required by `.github/workflows/backend-dev-deploy.yml`.
    are stored in Secrets Manager and the target ticker/job list is reviewed.
    Keep `enable_lambda_nat_egress = false` until live provider ingestion is
    approved because NAT Gateway creates hourly and data processing charges.
+   For PR #161, both NAT egress and EventBridge Scheduler stay intentionally
+   disabled for the low-cost dev account bootstrap. Track live ingestion
+   enablement, cost approval, and runbook smoke evidence through #163 before
+   changing either toggle.
+   The committed dev `deploy.auto.tfvars.json` follows this low-cost,
+   local-only bootstrap posture: Amplify is disabled and Cognito/CORS entries
+   include only localhost and loopback development origins. If a hosted dev FE
+   URL must be restored, track the callback, logout, and CORS change through
+   #162 before relying on that hosted login flow.
 
 4. If deploying Amplify through Terraform, install the AWS Amplify GitHub App for
    the target region/account and provide a GitHub personal access token through
@@ -221,6 +230,9 @@ For GitHub Actions, `backend-dev-deploy` initializes Terraform with the committe
 `backend.tf` and `envs/dev/deploy.auto.tfvars.json`. Any environment expansion
 must change backend config, tfvars, and workflow behavior together in one PR to
 avoid applying one environment's variables to another environment's state.
+After a dev backend/account transition PR merges, run `backend-dev-deploy` and
+record the success or expected guard failure on #52 before treating the deploy
+role hardening work as complete.
 
 ## Lambda Packaging
 
@@ -306,14 +318,14 @@ lambda_nat_public_subnet_id = "subnet-public-for-nat"
 lambda_nat_route_subnet_ids = ["subnet-lambda-a", "subnet-lambda-b"]
 ```
 
-Current dev live ingestion verification uses:
+For live ingestion verification, set the values for the target AWS account:
 
 ```hcl
 enable_lambda_nat_egress    = true
-lambda_nat_public_subnet_id = "subnet-0c816842b11dfd2e7"
+lambda_nat_public_subnet_id = "subnet-public-for-nat"
 lambda_nat_route_subnet_ids = [
-  "subnet-08d89333a3c3e2924",
-  "subnet-0e10680a556fa9ca8",
+  "subnet-lambda-private-a",
+  "subnet-lambda-private-b",
 ]
 ```
 

@@ -134,16 +134,30 @@ def _bootstrap_policy_document(script: str) -> dict[str, object]:
     return policy
 
 
-def _statement_actions(policy: dict[str, object], sid: str) -> set[str]:
+def _statement(policy: dict[str, object], sid: str) -> dict[str, object]:
     statements = policy["Statement"]
     assert isinstance(statements, list)
     for statement in statements:
         assert isinstance(statement, dict)
         if statement.get("Sid") == sid:
-            actions = statement["Action"]
-            assert isinstance(actions, list)
-            return {str(action) for action in actions}
+            return statement
     raise AssertionError(f"Policy statement not found: {sid}")
+
+
+def _statement_actions(policy: dict[str, object], sid: str) -> set[str]:
+    actions = _statement(policy, sid)["Action"]
+    if isinstance(actions, str):
+        return {actions}
+    assert isinstance(actions, list)
+    return {str(action) for action in actions}
+
+
+def _statement_resources(policy: dict[str, object], sid: str) -> set[str]:
+    resources = _statement(policy, sid)["Resource"]
+    if isinstance(resources, str):
+        return {resources}
+    assert isinstance(resources, list)
+    return {str(resource) for resource in resources}
 
 
 def test_ingestion_scheduler_enable_gate_documents_live_provider_prerequisites() -> None:
@@ -272,45 +286,102 @@ def test_deployment_bootstrap_documents_nat_egress_plan_review_checklist() -> No
     assert "If any non-NAT item is unexplained, do not apply" in checklist
 
 
-def test_github_deploy_role_policy_can_refresh_ingestion_and_nat_resources() -> None:
+def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
     bootstrap_script = (REPOSITORY_ROOT / "scripts/bootstrap_github_oidc.sh").read_text(
         encoding="utf-8"
     )
     deploy_policy = _bootstrap_policy_document(bootstrap_script)
-    deployment_actions = _statement_actions(deploy_policy, "DevBackendDeployment")
+    wildcard_actions = _statement_actions(
+        deploy_policy, "DevBackendDeploymentWildcardFallback"
+    )
     deployment_doc = (
         REPOSITORY_ROOT / "docs/engineering/DEPLOYMENT_BOOTSTRAP.md"
     ).read_text(encoding="utf-8")
+
+    assert 'resource_name_prefix="stockbrief-${environment}"' in bootstrap_script
+
+    assert _statement_resources(deploy_policy, "DeployIamRolesByPrefix") == {
+        "arn:aws:iam::${account_id}:role/${resource_name_prefix}-*"
+    }
+    assert _statement_actions(deploy_policy, "DeployPassRolesByPrefix") == {
+        "iam:PassRole"
+    }
+    assert _statement(deploy_policy, "DeployPassRolesByPrefix")["Condition"] == {
+        "StringEquals": {
+            "iam:PassedToService": [
+                "bedrock-agentcore.amazonaws.com",
+                "lambda.amazonaws.com",
+                "rds.amazonaws.com",
+                "scheduler.amazonaws.com",
+            ]
+        }
+    }
+    assert _statement_resources(deploy_policy, "DeployLambdaFunctionByPrefix") == {
+        "arn:aws:lambda:${region}:${account_id}:function:${resource_name_prefix}-*"
+    }
+    assert _statement_resources(deploy_policy, "DeploySecretsByPrefix") == {
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:${resource_name_prefix}/*"
+    }
+    assert _statement_resources(deploy_policy, "DeploySqsQueuesByPrefix") == {
+        "arn:aws:sqs:${region}:${account_id}:${resource_name_prefix}-*"
+    }
+    assert _statement_resources(deploy_policy, "DeploySchedulesByPrefix") == {
+        "arn:aws:scheduler:${region}:${account_id}:schedule/default/${resource_name_prefix}-*"
+    }
+    assert _statement_resources(deploy_policy, "DeployIngestionRawBucketByPrefix") == {
+        "arn:aws:s3:::${resource_name_prefix}-raw-${account_id}-${region}",
+        "arn:aws:s3:::${resource_name_prefix}-raw-${account_id}-${region}/*",
+    }
+    assert "s3:PutEncryptionConfiguration" in _statement_actions(
+        deploy_policy, "TerraformStateBucket"
+    )
+    assert "s3:PutEncryptionConfiguration" in _statement_actions(
+        deploy_policy, "DeployIngestionRawBucketByPrefix"
+    )
+
+    for scoped_sid, action in [
+        ("DeployLambdaFunctionByPrefix", "lambda:UpdateFunctionCode"),
+        ("DeployIamRolesByPrefix", "iam:CreateRole"),
+        ("DeploySecretsByPrefix", "secretsmanager:CreateSecret"),
+        ("DeployIngestionRawBucketByPrefix", "s3:GetBucketPublicAccessBlock"),
+        ("DeploySqsQueuesByPrefix", "sqs:GetQueueAttributes"),
+        ("DeploySchedulesByPrefix", "scheduler:CreateSchedule"),
+        ("DeploySnsTopicsByPrefix", "sns:CreateTopic"),
+        ("DeployCloudWatchAlarmsByPrefix", "cloudwatch:PutMetricAlarm"),
+    ]:
+        assert action in _statement_actions(deploy_policy, scoped_sid)
+        assert action not in wildcard_actions
 
     for action in [
         "kms:DescribeKey",
         "kms:GetKeyPolicy",
         "kms:GetKeyRotationStatus",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:GetLifecycleConfiguration",
-        "s3:DeleteBucketPublicAccessBlock",
-        "s3:DeleteBucketEncryption",
-        "s3:DeleteLifecycleConfiguration",
-        "s3:GetBucketAcl",
-        "s3:GetBucketOwnershipControls",
-        "sqs:GetQueueAttributes",
         "ec2:CreateNatGateway",
         "ec2:DescribeNatGateways",
         "ec2:AllocateAddress",
         "ec2:DescribeAddressesAttribute",
         "ec2:CreateRouteTable",
         "ec2:AssociateRouteTable",
-        "scheduler:CreateSchedule",
-        "scheduler:GetSchedule",
-        "scheduler:UpdateSchedule",
-        "scheduler:DeleteSchedule",
-        "scheduler:TagResource",
+        "rds:CreateDBProxy",
+        "logs:CreateLogGroup",
+        "cloudwatch:DescribeAlarms",
     ]:
-        assert action in deployment_actions
+        assert action in wildcard_actions
+
+    assert "lambda:*" not in bootstrap_script
+    assert "iam:*" not in bootstrap_script
+    assert "s3:PutBucketEncryption" not in bootstrap_script
+    assert "s3:DeleteBucketEncryption" not in bootstrap_script
+    assert "s3:DeleteBucketPublicAccessBlock" not in bootstrap_script
+    assert "s3:DeleteBucketTagging" not in bootstrap_script
+    assert "s3:DeleteLifecycleConfiguration" not in bootstrap_script
     assert "Terraform refresh" in deployment_doc
     assert "deploy role" in deployment_doc
-    assert "EIP address" in deployment_doc
-    assert "attributes/route table state" in deployment_doc
+    assert "stockbrief-<environment>-*" in deployment_doc
+    assert "wildcard fallback statement" in deployment_doc
+    assert "Prefer adding a narrow" in deployment_doc
+    assert "Keep the least-privilege hardening issue open" in deployment_doc
+    assert "`backend-dev-deploy` verification are complete" in deployment_doc
 
 
 def test_bootstrap_reconciles_dev_environment_branch_policy_to_main_only() -> None:

@@ -354,10 +354,22 @@ bootstrap:
 
 The deploy role keeps Terraform state bucket and lock table permissions scoped
 to exact ARNs. Service deployment actions are enumerated instead of using broad
-service wildcards such as `lambda:*` or `iam:*`. Some create, describe, and tag
-APIs still require `Resource: "*"` because the resource ARN is not known before
-creation or the AWS API does not support resource-level permissions for that
-operation.
+service wildcards such as `lambda:*` or `iam:*`.
+
+The bootstrap policy also splits actions with predictable StockBrief resource
+names into resource-scoped statements. The role can manage matching
+`stockbrief-<environment>-*` Lambda functions, IAM roles, CloudWatch alarms,
+CloudWatch log groups, Secrets Manager secrets, SNS topics, SQS queues,
+EventBridge Scheduler schedules, and the ingestion raw archive bucket. The
+`iam:PassRole` permission is restricted to matching role names and the AWS
+services that need those roles.
+
+Some services remain in the wildcard fallback statement because Terraform needs
+create, describe, or provider refresh APIs whose resource ARN is unknown before
+creation or not consistently supported by the AWS API. This currently includes
+API Gateway, Amplify, CloudFormation, Cognito, EC2 networking, KMS, RDS,
+CloudWatch alarm reads, log group creation/listing, SNS subscription cleanup,
+and STS caller identity.
 
 Terraform refresh also needs read permissions for every managed resource type.
 When ingestion raw archive or provider egress resources are enabled, the deploy
@@ -375,7 +387,15 @@ scripts/bootstrap_github_oidc.sh --dry-run --alarm-emails-json '["REPLACE_WITH_A
 scripts/bootstrap_github_oidc.sh --alarm-emails-json '["REPLACE_WITH_ALERT_EMAIL"]'
 ```
 
-Then verify the updated role with a real `backend-dev-deploy` workflow run.
+Then verify the updated role with a real `backend-dev-deploy` workflow run. If
+the workflow fails with `AccessDenied`, inspect the denied action and resource
+before widening the wildcard fallback. Prefer adding a narrow
+`stockbrief-<environment>-*` ARN statement when the AWS service supports it.
+For policy edits, also validate the generated IAM policy with AWS Access
+Analyzer and resolve `ERROR` findings before applying it to the deploy role.
+Keep the least-privilege hardening issue open until the bootstrap rerun and
+`backend-dev-deploy` verification are complete, then record the result on that
+issue before deciding whether it is done.
 
 ## New Environment Checklist
 

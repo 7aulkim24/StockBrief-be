@@ -498,6 +498,8 @@ def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
         "kms:DescribeKey",
         "kms:GetKeyPolicy",
         "kms:GetKeyRotationStatus",
+        "apigateway:TagResource",
+        "apigateway:UntagResource",
         "ec2:CreateNatGateway",
         "ec2:DescribeNatGateways",
         "ec2:AllocateAddress",
@@ -522,6 +524,9 @@ def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
     assert "deploy role" in deployment_doc
     assert "stockbrief-<environment>-*" in deployment_doc
     assert "wildcard fallback statement" in deployment_doc
+    assert "API Gateway stage creation" in deployment_doc
+    assert "`apigateway:TagResource`" in deployment_doc
+    assert "API Gateway tag actions" in deployment_doc
     assert "Prefer adding a narrow" in deployment_doc
     assert "PR #164 covers only the apply blocker" in deployment_doc
     assert "It does not close #52 by itself" in deployment_doc

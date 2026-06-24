@@ -226,15 +226,105 @@ def test_preferences_round_trip_for_authenticated_user(seeded_session: Session) 
     try:
         response = client.put(
             "/v1/me/preferences",
-            json={"preferences": {"risk_profile": "balanced", "markets": ["KOSPI"]}},
+            json={
+                "preferences": {
+                    "risk_profile": "balanced",
+                    "markets": ["KOSPI"],
+                    "notifications": {
+                        "email_enabled": True,
+                        "watchlist_digest": "weekly",
+                    },
+                }
+            },
         )
 
         assert response.status_code == 200
         assert response.json()["preferences"]["risk_profile"] == "balanced"
+        assert response.json()["preferences"]["notifications"] == {
+            "email_enabled": True,
+            "watchlist_digest": "weekly",
+        }
 
         get_response = client.get("/v1/me/preferences")
         assert get_response.status_code == 200
         assert get_response.json()["preferences"]["markets"] == ["KOSPI"]
+        assert get_response.json()["preferences"]["notifications"]["watchlist_digest"] == "weekly"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_preferences_reject_invalid_known_values(seeded_session: Session) -> None:
+    client = _authenticated_client(seeded_session)
+    try:
+        response = client.put(
+            "/v1/me/preferences",
+            json={
+                "preferences": {
+                    "risk_profile": "certain",
+                    "markets": ["KOSPI"],
+                    "notifications": {
+                        "email_enabled": "yes",
+                        "watchlist_digest": "monthly",
+                    },
+                }
+            },
+        )
+
+        assert response.status_code == 400
+        payload = response.json()
+        assert payload["error"]["code"] == "INVALID_PREFERENCES"
+        assert payload["error"]["details"] == [
+            {"field": "preferences.risk_profile", "reason": "invalid_value"},
+            {"field": "preferences.notifications.email_enabled", "reason": "invalid_type"},
+            {"field": "preferences.notifications.watchlist_digest", "reason": "invalid_value"},
+        ]
+        get_response = client.get("/v1/me/preferences")
+        assert get_response.status_code == 200
+        assert get_response.json()["preferences"] == {}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_preferences_reject_invalid_notifications_shape(seeded_session: Session) -> None:
+    client = _authenticated_client(seeded_session)
+    try:
+        response = client.put(
+            "/v1/me/preferences",
+            json={"preferences": {"notifications": "weekly"}},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["error"]["details"] == [
+            {"field": "preferences.notifications", "reason": "invalid_type"}
+        ]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_preferences_reject_null_known_values(seeded_session: Session) -> None:
+    client = _authenticated_client(seeded_session)
+    try:
+        response = client.put(
+            "/v1/me/preferences",
+            json={
+                "preferences": {
+                    "risk_profile": None,
+                    "notifications": {
+                        "email_enabled": None,
+                        "watchlist_digest": None,
+                    },
+                }
+            },
+        )
+
+        assert response.status_code == 400
+        payload = response.json()
+        assert payload["error"]["code"] == "INVALID_PREFERENCES"
+        assert payload["error"]["details"] == [
+            {"field": "preferences.risk_profile", "reason": "invalid_value"},
+            {"field": "preferences.notifications.email_enabled", "reason": "invalid_type"},
+            {"field": "preferences.notifications.watchlist_digest", "reason": "invalid_value"},
+        ]
     finally:
         app.dependency_overrides.clear()
 

@@ -355,6 +355,34 @@ override. They are scoped to the current user.
 | `POST` | `/v1/me/chat-sessions` | Create an empty current user chat session |
 | `GET` | `/v1/me/chat-sessions/{session_id}` | Read current user chat session messages |
 
+`PUT /v1/me/preferences` stores the current user's product preferences. Unknown
+preference keys are preserved for forward compatibility, but known keys are
+validated:
+
+- `risk_profile`: `conservative`, `balanced`, or `aggressive`
+- `notifications.email_enabled`: boolean
+- `notifications.watchlist_digest`: `off`, `daily`, or `weekly`
+
+When any known preference key above is present, `null` is rejected as invalid.
+
+Request:
+
+```json
+{
+  "preferences": {
+    "risk_profile": "balanced",
+    "markets": ["KOSPI"],
+    "notifications": {
+      "email_enabled": true,
+      "watchlist_digest": "weekly"
+    }
+  }
+}
+```
+
+Invalid known preference values return `400 INVALID_PREFERENCES` with field-level
+details.
+
 `GET /v1/me/chat-sessions/{session_id}` returns `404 CHAT_SESSION_NOT_FOUND`
 when the session does not exist or belongs to another user.
 

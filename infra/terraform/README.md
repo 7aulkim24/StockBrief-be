@@ -365,6 +365,22 @@ lambda_nat_route_subnet_ids = [
 ]
 ```
 
+Current dev live ingestion settings:
+
+```hcl
+enable_lambda_nat_egress    = true
+lambda_nat_public_subnet_id = "subnet-0c816842b11dfd2e7"
+lambda_nat_route_subnet_ids = [
+  "subnet-08d89333a3c3e2924",
+  "subnet-0e10680a556fa9ca8",
+]
+```
+
+The current dev NAT public subnet is intentionally not included in
+`lambda_nat_route_subnet_ids`. A live smoke on 2026-06-26 observed
+`nat-0c302c1bf173385d2` as `available` and the S3 Gateway endpoint attached to
+both the original route table and the Terraform-managed NAT route table.
+
 The public NAT subnet must keep a route to the VPC Internet Gateway. The route
 subnet IDs are associated with a Terraform-managed private route table whose
 default route points to the NAT Gateway. For the current dev account, choose a
@@ -527,6 +543,51 @@ complete and recorded in the PR body:
   If the dev tfvars already contain reviewed scheduler jobs, keep those jobs as
   current-state preservation. Do not fold scheduler disablement into the NAT rollback
   unless a separate reviewer-approved scheduler change says so.
+
+Current dev scheduler review evidence for issue #199:
+
+- `check_ingestion_smoke.py --providers OpenDART NAVER_NEWS --tickers 000660`
+  returned `ready_for_manual_ingestion=true` and `scheduler_enable_ready=true`.
+- Provider egress was reachable from Lambda: OpenDART returned HTTP 200 and
+  NAVER_NEWS returned an HTTP 400 validation response for the unauthenticated
+  probe.
+- Manual `ingest_provider_batch` succeeded for `000660`, source date
+  `2026-06-26`, with no `missing_api_key` fallback.
+- NAVER_NEWS inserted 10 normalized evidence rows. OpenDART completed with 0
+  inserts for the selected disclosure date.
+- Raw archive objects were written with SSE-KMS encryption for both providers.
+- The ingestion DLQ remained empty after the live smoke.
+- `docs/engineering/CLOUD_DEV_PLAN.md` is intentionally excluded from git by
+  `docs/engineering/CLOUD_*_PLAN.md`; this tracked Terraform README is the
+  PR-visible replacement for the #199 cloud plan evidence.
+- 2026-06-26 scheduler reactivation plan evidence for #199/#200:
+  `terraform plan -var-file=envs/dev/deploy.auto.tfvars.json` planned 6 scheduler additions:
+  scheduler IAM role, scheduler invoke policy, two Lambda scheduler
+  permissions, and two EventBridge schedules.
+- NAT Gateway, NAT route table, Lambda route table associations, and the S3
+  Gateway endpoint route table attachment were already present in Terraform
+  state and were not new changes in this scheduler reactivation plan.
+- The full plan also showed existing Amplify, Lambda package hash, Cognito
+  client, and RDS in-place drift. Classify those drift items before apply; do
+  not apply if any drift is unexplained or implies replacement, cost, deletion
+  protection, backup, or networking changes outside this PR.
+
+Reviewed dev scheduler jobs:
+
+```json
+[
+  {
+    "provider": "OpenDART",
+    "tickers": ["005930"],
+    "schedule_expression": "cron(0 18 ? * MON-FRI *)"
+  },
+  {
+    "provider": "NAVER_NEWS",
+    "tickers": ["005930"],
+    "schedule_expression": "cron(5 18 ? * MON-FRI *)"
+  }
+]
+```
 
 If any check fails, keep the scheduler disabled and run ingestion manually until
 the missing credential, network egress, or provider behavior is fixed.

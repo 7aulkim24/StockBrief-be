@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -10,6 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.orm import IngestionRun
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionIdempotencyService:
@@ -92,6 +95,12 @@ class IngestionIdempotencyService:
                 )
             except IntegrityError:
                 self.session.rollback()
+                logger.warning(
+                    "ingestion_run_integrity_conflict_recovered: "
+                    "run_id=%s input_hash=%s — concurrent insert detected, recovering from existing run",
+                    run_id,
+                    input_hash,
+                )
                 existing = self._find_existing_after_integrity_error(
                     run_id=run_id,
                     input_hash=input_hash,

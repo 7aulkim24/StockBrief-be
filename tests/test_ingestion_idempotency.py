@@ -538,3 +538,96 @@ def test_status_transitions_record_completion_payloads(db_session: Session) -> N
 
     assert run.status == "failed"
     assert run.error_summary == {"code": "replay_failed"}
+
+
+# ---------------------------------------------------------------------------
+# Issue #130 — IntegrityError 복구 경로 경고 로그 검증
+# ---------------------------------------------------------------------------
+
+
+def test_integrity_error_recovery_emits_warning_log(
+    monkeypatch,
+    db_session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """동일 run_id 경합 복구 시 WARNING 로그에 run_id와 input_hash가 포함된다."""
+    import logging
+
+    service = IngestionIdempotencyService(db_session)
+
+    def fake_start_run(**kwargs):
+        db_session.add(
+            IngestionRun(
+                run_id=kwargs["run_id"],
+                job_type=kwargs["job_type"],
+                provider=kwargs["provider"],
+                target_scope=kwargs["target_scope"],
+                status="succeeded",
+                input_hash=kwargs["input_hash"],
+                started_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(timezone.utc),
+                result_counts={"inserted": 1},
+            )
+        )
+        db_session.commit()
+        raise IntegrityError("insert", {}, Exception("unique violation"))
+
+    monkeypatch.setattr(service, "start_run", fake_start_run)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.ingestion_idempotency"):
+        service.start_or_restart_run(
+            run_id="opendart-20260618-005930",
+            job_type="disclosure",
+            provider="OpenDART",
+            target_scope={"ticker": "005930"},
+            input_hash="conflict-hash",
+        )
+
+    assert any("ingestion_run_integrity_conflict_recovered" in r.message for r in caplog.records)
+    assert any("opendart-20260618-005930" in r.message for r in caplog.records)
+    assert any("conflict-hash" in r.message for r in caplog.records)
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) >= 1
+
+
+def test_input_hash_integrity_error_recovery_emits_warning_log(
+    monkeypatch,
+    db_session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """다른 run_id의 input_hash 경합 복구 시에도 WARNING 로그가 발생한다."""
+    import logging
+
+    service = IngestionIdempotencyService(db_session)
+
+    def fake_start_run(**kwargs):
+        db_session.add(
+            IngestionRun(
+                run_id="opendart-20260618-005930-existing",
+                job_type=kwargs["job_type"],
+                provider=kwargs["provider"],
+                target_scope=kwargs["target_scope"],
+                status="succeeded",
+                input_hash=kwargs["input_hash"],
+                started_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(timezone.utc),
+                result_counts={"inserted": 1},
+            )
+        )
+        db_session.commit()
+        raise IntegrityError("insert", {}, Exception("active input_hash unique violation"))
+
+    monkeypatch.setattr(service, "start_run", fake_start_run)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.ingestion_idempotency"):
+        service.start_or_restart_run(
+            run_id="opendart-20260618-005930-requested",
+            job_type="disclosure",
+            provider="OpenDART",
+            target_scope={"ticker": "005930"},
+            input_hash="shared-hash",
+        )
+
+    assert any("ingestion_run_integrity_conflict_recovered" in r.message for r in caplog.records)
+    assert any("opendart-20260618-005930-requested" in r.message for r in caplog.records)
+    assert any("shared-hash" in r.message for r in caplog.records)

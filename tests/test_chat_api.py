@@ -60,6 +60,7 @@ def test_chat_allowed_answer_uses_candidate_evidence_and_risks(
     assert payload["message"] == "mock Agent 응답을 반환했습니다."
     data = payload["data"]
     assert data["safety"]["policy_action"] == "ALLOW"
+    assert data["message_id"] is None
     assert "추천 후보 점수" in data["answer"]
     assert "주요 추천 이유" in data["answer"]
     assert "연결된 근거 요약" in data["answer"]

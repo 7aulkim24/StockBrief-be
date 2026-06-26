@@ -82,6 +82,7 @@ def _chat_contract_data(
 ) -> ChatContractData:
     return ChatContractData(
         session_id=response.session_id or request.session_id or f"local-{request.ticker}",
+        message_id=response.message_id,
         answer=response.answer,
         citations=[
             ChatCitationContract(

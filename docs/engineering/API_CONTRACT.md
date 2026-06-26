@@ -318,6 +318,7 @@ Response `data`:
 ```json
 {
   "session_id": "local-session-1",
+  "message_id": null,
   "answer": "mock 데이터 기준 설명입니다.",
   "citations": [
     {

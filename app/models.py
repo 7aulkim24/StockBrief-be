@@ -206,6 +206,7 @@ class ChatSafetyContract(BaseModel):
 
 class ChatContractData(BaseModel):
     session_id: str
+    message_id: str | None = None
     answer: str
     citations: list[ChatCitationContract]
     safety: ChatSafetyContract

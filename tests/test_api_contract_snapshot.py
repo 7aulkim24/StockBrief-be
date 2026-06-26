@@ -87,6 +87,7 @@ def test_chat_response_schema_required_fields_snapshot(
     data_schema = schemas["ChatContractData"]
     assert set(data_schema["properties"]) >= {
         "session_id",
+        "message_id",
         "answer",
         "citations",
         "safety",

@@ -656,6 +656,7 @@ def test_authenticated_chat_persists_session_and_messages(seeded_session: Sessio
         payload = response.json()
         session_id = payload["data"]["session_id"]
         assert session_id
+        assert payload["data"]["message_id"]
         assert client.get("/v1/me/chat-sessions").json()["count"] == 1
         messages = seeded_session.scalars(
             select(ChatMessage).where(ChatMessage.session_id == session_id)
@@ -689,6 +690,7 @@ def test_authenticated_chat_persists_session_and_messages(seeded_session: Sessio
         ]
         assert detail_payload["messages"][0]["content"] == "왜 추천됐나요?"
         assert detail_payload["messages"][1]["content"] == payload["data"]["answer"]
+        assert detail_payload["messages"][1]["message_id"] == payload["data"]["message_id"]
         assert detail_payload["messages"][1]["citations"]
         assert detail_payload["messages"][1]["safety_flags"] == [
             {"policy_status": "allowed"}
@@ -699,6 +701,7 @@ def test_authenticated_chat_persists_session_and_messages(seeded_session: Sessio
         ).all()
         assert {message.role for message in messages} == {"user", "assistant", "system"}
         assistant_message = next(message for message in messages if message.role == "assistant")
+        assert assistant_message.message_id == payload["data"]["message_id"]
         assert {"evidence_id", "type", "title", "source_url", "published_at"}.issubset(
             assistant_message.citations[0]
         )
@@ -777,11 +780,13 @@ def test_authenticated_bedrock_chat_persists_after_read_session_close(
         payload = response.json()
         assert payload["message"] == "bedrock Agent 응답을 반환했습니다."
         assert "공개 데이터 기준 검토 대상" in payload["data"]["answer"]
+        assert payload["data"]["message_id"]
         messages = seeded_session.scalars(
             select(ChatMessage).where(ChatMessage.session_id == payload["data"]["session_id"])
         ).all()
         assert [message.role for message in messages] == ["user", "assistant"]
         assistant_message = next(message for message in messages if message.role == "assistant")
+        assert assistant_message.message_id == payload["data"]["message_id"]
         assert "공개 데이터 기준 검토 대상" in assistant_message.content
         assert assistant_message.citations
     finally:

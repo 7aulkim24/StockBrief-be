@@ -93,11 +93,10 @@ Environment variables required by `.github/workflows/backend-dev-deploy.yml`.
    it only after the target GitHub organization approves the Amplify GitHub App.
    The current dev profile has Amplify enabled for the reviewed hosted FE URL.
    Keep `enable_ingestion_scheduler = false` until provider API credentials are
-   stored in Secrets Manager and the target ticker/job list is reviewed. The
-   current dev profile keeps the reviewed OpenDART and NAVER schedules for
-   `005930`; do not remove those schedules in an unrelated NAT or networking PR.
-   That scheduler setting is current-state preservation, not part of the NAT
-   smoke rollback scope tracked in #192.
+   stored in Secrets Manager, Lambda provider egress is available, and the
+   target ticker/job list is reviewed. After a live provider smoke window ends
+   and NAT egress is turned off, pause the dev scheduler again so EventBridge
+   does not invoke provider jobs that cannot reach OpenDART or NAVER.
    Keep `enable_lambda_nat_egress = false` until live provider ingestion is
    approved because NAT Gateway creates hourly and data processing charges.
    During the live ingestion smoke window, NAT egress is enabled for the Lambda

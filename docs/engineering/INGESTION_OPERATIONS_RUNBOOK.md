@@ -29,12 +29,12 @@ payloads into PR comments, shared logs, or issue comments.
   terraform output external_api_secret_arn
   ```
 
-- `enable_ingestion_scheduler` matches the reviewed dev tfvars. If schedules
-  already exist, keep them out of unrelated NAT or networking changes unless a
-  reviewer explicitly approves disabling scheduled ingestion.
-  Existing reviewed scheduler jobs are current-state preservation; #192 NAT
-  smoke rollback should turn off NAT egress only and must not silently remove
-  those jobs.
+- `enable_ingestion_scheduler` matches the reviewed dev tfvars. Keep it `false`
+  while Lambda provider egress is unavailable. When a live provider smoke window
+  needs scheduled runs, enable NAT egress, review the exact provider/ticker
+  schedule, verify `check_ingestion_scheduler_enable_gate`, then apply the
+  scheduler change. After NAT egress is turned off, pause the dev scheduler
+  again so scheduled jobs do not fail on provider network access.
 - External API credentials are stored in Secrets Manager outside git. Use the
   repository helper so the secret payload is written to a temporary file and
   removed automatically:
@@ -399,11 +399,10 @@ Do not enable EventBridge Scheduler until all conditions are true:
   archive, DLQ, and CloudWatch logs have been checked.
 - Provider rate limits, ticker count, and expected execution frequency have
   been reviewed.
-- The reviewed dev scheduler job list is explicit. For the first scheduled
+- The reviewed dev scheduler job list is explicit. For the next scheduled
   rollout, use `OpenDART` and `NAVER_NEWS` for ticker `005930` with the weekday
-  18:00 KST expression `cron(0 18 ? * MON-FRI *)`.
-  If those jobs are already present in dev tfvars, treat them as preserved
-  scheduler state rather than part of the NAT rollback scope.
+  18:00 KST expression `cron(0 18 ? * MON-FRI *)`. Keep the job list empty in
+  dev tfvars until provider egress and the scheduler gate pass again.
 - Lambda outbound internet egress is confirmed by `check_provider_egress`.
 - The scheduler change is reviewed in a separate PR.
 

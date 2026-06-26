@@ -42,8 +42,9 @@ def test_ingestion_operations_runbook_exists_and_covers_manual_smoke() -> None:
     assert "stale_started_run_reconciled" in runbook
     assert "OpenDART` and `NAVER_NEWS` for ticker `005930`" in runbook
     assert "cron(0 18 ? * MON-FRI *)" in runbook
-    assert "current-state preservation" in runbook
-    assert "must not silently remove" in runbook
+    assert "Keep the job list empty in" in runbook
+    assert "until provider egress and the scheduler gate pass again" in runbook
+    assert "The scheduler change is reviewed in a separate PR" in runbook
     assert '"stockbrief_operation":"check_ingestion_scheduler_enable_gate"' in runbook
     assert "scheduler_enable_ready=true" in runbook
     assert "Replace `YYYY-MM-DD`" in runbook

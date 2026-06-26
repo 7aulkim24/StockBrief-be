@@ -152,24 +152,23 @@ def test_dev_account_transition_requires_backend_deploy_result_on_issue_52() -> 
     assert "record the success or expected guard failure on #52" in terraform_readme
 
 
-def test_dev_post_smoke_nat_rollback_preserves_reviewed_scheduler_jobs() -> None:
+def test_dev_scheduler_is_paused_when_provider_egress_is_off() -> None:
     deploy_tfvars = json.loads(_read("envs/dev/deploy.auto.tfvars.json"))
     terraform_readme = _read("README.md")
+    ingestion_runbook = (REPOSITORY_ROOT / "docs/engineering/INGESTION_OPERATIONS_RUNBOOK.md").read_text(
+        encoding="utf-8"
+    )
 
     assert deploy_tfvars["enable_lambda_nat_egress"] is False
     assert deploy_tfvars["lambda_nat_public_subnet_id"] == ""
     assert deploy_tfvars["lambda_nat_route_subnet_ids"] == []
-    assert deploy_tfvars["enable_ingestion_scheduler"] is True
-    assert {
-        job["provider"] for job in deploy_tfvars["ingestion_schedule_jobs"]
-    } == {"OpenDART", "NAVER_NEWS"}
-    assert all(job["tickers"] == ["005930"] for job in deploy_tfvars["ingestion_schedule_jobs"])
+    assert deploy_tfvars["enable_ingestion_scheduler"] is False
+    assert deploy_tfvars["ingestion_schedule_jobs"] == []
     assert "live ingestion smoke window" in terraform_readme
-    assert "NAT egress is enabled" in terraform_readme
-    assert "do not remove those schedules" in terraform_readme
-    assert "smoke rollback scope tracked in #192" in terraform_readme
-    assert "turn NAT egress" in terraform_readme
-    assert "off again before pausing" in terraform_readme
+    assert "pause the dev scheduler again" in terraform_readme
+    assert "Keep it `false`" in ingestion_runbook
+    assert "while Lambda provider egress is unavailable" in ingestion_runbook
+    assert "check_ingestion_scheduler_enable_gate" in ingestion_runbook
 
 
 def test_agentcore_runtime_module_uses_cloudformation_resources() -> None:
@@ -299,8 +298,8 @@ def test_ingestion_pipeline_resources_are_wired_with_scheduler_disabled_by_defau
     assert 'output "ingestion_dlq_url"' in outputs_tf
     assert 'output "ingestion_scheduler_names"' in outputs_tf
     assert "enable_ingestion_scheduler          = false" in dev_tfvars
-    assert deploy_tfvars["enable_ingestion_scheduler"] is True
-    assert len(deploy_tfvars["ingestion_schedule_jobs"]) == 2
+    assert deploy_tfvars["enable_ingestion_scheduler"] is False
+    assert deploy_tfvars["ingestion_schedule_jobs"] == []
 
 
 def test_lambda_nat_egress_is_toggleable_and_disabled_by_default() -> None:

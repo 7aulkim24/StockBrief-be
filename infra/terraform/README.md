@@ -619,8 +619,8 @@ agentcore deploy --diff
 
 ## Direct Bedrock Chat Provider
 
-The backend defaults to `chat_provider = "mock"` so local/dev smoke tests do not
-call external AI services. To validate the direct Bedrock provider, set:
+The backend examples default to `chat_provider = "mock"` so local smoke tests do
+not call external AI services. To validate the direct Bedrock provider, set:
 
 ```hcl
 chat_provider         = "bedrock"
@@ -651,6 +651,12 @@ AWS profile routing list and IAM examples. Keep the provider on `mock` unless
 Bedrock model access, expected request volume, and cost are approved for the
 day's validation.
 
+The current dev profile has Bedrock direct chat enabled for issue #201 using
+`apac.amazon.nova-micro-v1:0` in `ap-northeast-2`. Live preflight evidence from
+the dev AWS account returned `ok=true`, `answer_length=36`,
+`answer_sha256_prefix=e483f1699288`, and `matched_terms=[]`; apply the profile
+only while this model access and cost approval remain valid.
+
 Before switching the deployed API to `chat_provider = "bedrock"`, verify that
 the active AWS account can invoke the selected Bedrock model:
 
@@ -666,6 +672,23 @@ answer, so the output can be attached to PR or deployment evidence without
 copying model text into review comments. If the smoke fails, keep
 `chat_provider = "mock"` and resolve Bedrock model access, region, or IAM before
 changing Terraform variables.
+
+After applying a profile that switches the deployed API to
+`chat_provider = "bedrock"`, record `/v1/chat` live smoke evidence on the PR or
+linked issue before closing the Bedrock enablement work. The post-deploy smoke
+must confirm:
+
+- the existing `/v1/chat` response contract is preserved, including `data.answer`,
+  `data.citations`, `data.policy_status`, `data.disclaimer`, and
+  `data.used_evidence_ids`;
+- the citation guard remains active, so Bedrock answers cannot return unsupported
+  or invented evidence IDs;
+- Bedrock runtime failures, empty answers, unsafe output, and citation guard
+  failures remain fail-closed as `CHAT_PROVIDER_UNAVAILABLE` instead of falling
+  back silently to mock output.
+
+Keep `Refs #201` rather than `Closes #201` on the Terraform profile PR until
+this deployed `/v1/chat` evidence is attached.
 
 ## Secrets Manager
 

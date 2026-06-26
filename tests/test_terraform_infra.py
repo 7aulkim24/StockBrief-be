@@ -235,6 +235,7 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     api_lambda_tf = _read("modules/api_lambda/main.tf")
     api_lambda_variables_tf = _read("modules/api_lambda/variables.tf")
     dev_tfvars = _read("envs/dev/terraform.tfvars.example")
+    deploy_tfvars = json.loads(_read("envs/dev/deploy.auto.tfvars.json"))
     terraform_readme = _read("README.md")
 
     assert 'variable "chat_provider"' in variables_tf
@@ -277,6 +278,25 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     assert "bedrock_chat_inference_profile_extra_foundation_model_arns" in terraform_readme
     assert "ap-southeast-2" in terraform_readme
     assert "provider on `mock`" in terraform_readme
+    assert "current dev profile has Bedrock direct chat enabled" in terraform_readme
+    assert "answer_sha256_prefix=e483f1699288" in terraform_readme
+    assert "After applying a profile that switches the deployed API" in terraform_readme
+    assert "existing `/v1/chat` response contract is preserved" in terraform_readme
+    assert "citation guard remains active" in terraform_readme
+    assert "fail-closed as `CHAT_PROVIDER_UNAVAILABLE`" in terraform_readme
+    assert "Keep `Refs #201` rather than `Closes #201`" in terraform_readme
+    assert deploy_tfvars["chat_provider"] == "bedrock"
+    assert deploy_tfvars["bedrock_chat_model_id"] == "apac.amazon.nova-micro-v1:0"
+    assert deploy_tfvars["bedrock_chat_region"] == ""
+    assert deploy_tfvars["bedrock_chat_inference_profile_foundation_model_regions"] == [
+        "ap-southeast-2",
+        "ap-northeast-1",
+        "ap-south-1",
+        "ap-northeast-2",
+        "ap-southeast-1",
+        "ap-northeast-3",
+    ]
+    assert deploy_tfvars["bedrock_chat_inference_profile_extra_foundation_model_arns"] == []
 
 
 def test_ingestion_pipeline_resources_are_wired_with_scheduler_disabled_by_default() -> None:

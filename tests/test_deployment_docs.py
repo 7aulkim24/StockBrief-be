@@ -83,6 +83,8 @@ def test_bedrock_chat_smoke_runbook_documents_redacted_validation() -> None:
     assert "--model-id apac.amazon.nova-micro-v1:0" in terraform_readme
     assert "`answer_sha256_prefix`" in terraform_readme
     assert "does not print the raw model" in terraform_readme
+    assert "deployed `/v1/chat` evidence" in terraform_readme
+    assert "CHAT_PROVIDER_UNAVAILABLE" in terraform_readme
     assert "PROHIBITED_MODEL_OUTPUT_TERMS" in script
     assert "answer_sha256_prefix" in script
 

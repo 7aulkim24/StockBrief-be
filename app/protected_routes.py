@@ -196,23 +196,14 @@ def import_watchlist(
             skipped_existing_count += 1
             continue
         _stock_or_404(session, item.ticker)
-        session.add(
-            Watchlist(
-                user_id=current_user.id,
-                ticker=item.ticker,
-                name=item.name,
-                market=item.market,
-                sector=item.sector,
-                memo=item.memo,
-            )
-        )
+        imported = _insert_watchlist_item(session, current_user, item)
         existing_tickers.add(item.ticker)
-        imported_count += 1
+        if imported:
+            imported_count += 1
+        else:
+            skipped_existing_count += 1
 
-    try:
-        session.commit()
-    except IntegrityError:
-        session.rollback()
+    session.commit()
     items = _watchlist_rows(session, current_user)
     return ServerWatchlistImportResponse(
         imported_count=imported_count,
@@ -374,6 +365,43 @@ def _watchlist_rows(session: Session, user: User) -> list[Watchlist]:
             .where(Watchlist.user_id == user.id)
             .order_by(Watchlist.saved_at.desc(), Watchlist.ticker.asc())
         ).all()
+    )
+
+
+def _insert_watchlist_item(
+    session: Session,
+    user: User,
+    item: ServerWatchlistItemRequest,
+) -> bool:
+    try:
+        with session.begin_nested():
+            session.add(
+                Watchlist(
+                    user_id=user.id,
+                    ticker=item.ticker,
+                    name=item.name,
+                    market=item.market,
+                    sector=item.sector,
+                    memo=item.memo,
+                )
+            )
+            session.flush()
+    except IntegrityError:
+        if _watchlist_item_exists(session, user, item.ticker):
+            return False
+        raise
+    return True
+
+
+def _watchlist_item_exists(session: Session, user: User, ticker: str) -> bool:
+    return (
+        session.scalars(
+            select(Watchlist).where(
+                Watchlist.user_id == user.id,
+                Watchlist.ticker == ticker,
+            )
+        ).first()
+        is not None
     )
 
 

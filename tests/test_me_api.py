@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import auth
+from app import auth, protected_routes
 from app.auth import CognitoClaims, _upsert_user_from_claims, get_current_user, get_optional_current_user
 from app.config import Settings, get_settings
 from app.db import get_db_session
@@ -535,6 +535,71 @@ def test_watchlist_import_merges_without_duplicate_tickers(
 
         user = seeded_session.scalars(select(User).where(User.cognito_sub == "cognito-sub-1")).one()
         rows = seeded_session.scalars(select(Watchlist).where(Watchlist.user_id == user.id)).all()
+        assert len(rows) == 2
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_watchlist_import_counts_concurrent_existing_item_as_skipped(
+    seeded_session: Session,
+    monkeypatch,
+) -> None:
+    client = _authenticated_client(seeded_session)
+    user = seeded_session.scalars(select(User).where(User.cognito_sub == "cognito-sub-1")).one()
+    seeded_session.add(
+        Watchlist(
+            user_id=user.id,
+            ticker="005930",
+            name="삼성전자",
+            market="KOSPI",
+            sector="반도체",
+        )
+    )
+    seeded_session.commit()
+    real_watchlist_rows = protected_routes._watchlist_rows
+    calls = {"count": 0}
+
+    def stale_first_watchlist_snapshot(session: Session, user: User):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return []
+        return real_watchlist_rows(session, user)
+
+    monkeypatch.setattr(
+        protected_routes,
+        "_watchlist_rows",
+        stale_first_watchlist_snapshot,
+    )
+
+    try:
+        response = client.post(
+            "/v1/me/watchlist/import",
+            json={
+                "items": [
+                    {
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "market": "KOSPI",
+                        "sector": "반도체",
+                    },
+                    {
+                        "ticker": "000660",
+                        "name": "SK하이닉스",
+                        "market": "KOSPI",
+                        "sector": "반도체",
+                    },
+                ]
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["imported_count"] == 1
+        assert payload["skipped_existing_count"] == 1
+        assert {item["ticker"] for item in payload["items"]} == {"005930", "000660"}
+        rows = seeded_session.scalars(
+            select(Watchlist).where(Watchlist.user_id == user.id)
+        ).all()
         assert len(rows) == 2
     finally:
         app.dependency_overrides.clear()

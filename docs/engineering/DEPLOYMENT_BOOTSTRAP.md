@@ -237,8 +237,9 @@ terraform output ingestion_dlq_url
 Pause checklist:
 
 - Confirm no PR is waiting for a live AWS smoke test.
-- Keep `enable_ingestion_scheduler = false` unless a reviewed PR explicitly
-  enables it.
+- Keep only reviewed `enable_ingestion_scheduler` jobs. Disable schedules before
+  a long pause unless the team explicitly wants the reviewed provider jobs to
+  keep running.
 - Stop the dev RDS instance when database work is done:
 
   ```bash
@@ -339,6 +340,7 @@ that is not one of these expected NAT egress resources:
 - Elastic IP for the NAT Gateway
 - NAT route table
 - Lambda subnet route table associations
+- S3 Gateway endpoint route table update that adds the NAT route table
 
 Record the classification in the PR body before apply:
 
@@ -370,6 +372,18 @@ aws ec2 describe-nat-gateways \
 
 aws ec2 describe-route-tables \
   --filters "Name=tag:Name,Values=stockbrief-dev-lambda-nat-egress-rt" \
+  --profile stockbrief-dev \
+  --region ap-northeast-2
+
+aws ec2 describe-route-tables \
+  --filters "Name=association.subnet-id,Values=<lambda_nat_public_subnet_id>" \
+  --query 'RouteTables[].Routes[]' \
+  --profile stockbrief-dev \
+  --region ap-northeast-2
+
+aws ec2 describe-route-tables \
+  --filters "Name=association.subnet-id,Values=<lambda_nat_route_subnet_id_a>,<lambda_nat_route_subnet_id_b>" \
+  --query 'RouteTables[].Associations[].SubnetId' \
   --profile stockbrief-dev \
   --region ap-northeast-2
 ```

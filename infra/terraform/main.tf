@@ -17,8 +17,12 @@ module "cloudwatch" {
 }
 
 locals {
-  managed_networking_enabled  = var.vpc_id != "" && length(var.db_subnet_ids) > 0 && length(var.lambda_subnet_ids) > 0
-  s3_gateway_endpoint_enabled = local.managed_networking_enabled && var.enable_ingestion_raw_archive && length(var.vpc_endpoint_route_table_ids) > 0
+  managed_networking_enabled = var.vpc_id != "" && length(var.db_subnet_ids) > 0 && length(var.lambda_subnet_ids) > 0
+  s3_gateway_endpoint_route_table_ids = distinct(concat(
+    var.vpc_endpoint_route_table_ids,
+    local.lambda_nat_egress_enabled ? [aws_route_table.lambda_nat_egress[0].id] : [],
+  ))
+  s3_gateway_endpoint_enabled = local.managed_networking_enabled && var.enable_ingestion_raw_archive && length(local.s3_gateway_endpoint_route_table_ids) > 0
 
   effective_lambda_security_group_ids = length(var.lambda_security_group_ids) > 0 ? var.lambda_security_group_ids : (
     local.managed_networking_enabled ? [aws_security_group.lambda[0].id] : []
@@ -172,7 +176,7 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_id            = var.vpc_id
   service_name      = "com.amazonaws.${var.aws_region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = var.vpc_endpoint_route_table_ids
+  route_table_ids   = local.s3_gateway_endpoint_route_table_ids
 }
 
 module "cognito" {

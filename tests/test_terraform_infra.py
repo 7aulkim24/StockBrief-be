@@ -18,7 +18,7 @@ def test_multi_account_dev_profile_templates_are_available() -> None:
 
     assert "dev-<member>" in variables_tf
     assert 'regex("^dev-[a-z0-9][a-z0-9-]*$"' in variables_tf
-    assert 'bucket         = "stockbrief-terraform-state-217139788460-ap-northeast-2"' in dev_backend
+    assert 'bucket         = "stockbrief-terraform-state-560271561793-ap-northeast-2"' in dev_backend
     assert 'key            = "stockbrief/dev/terraform.tfstate"' in dev_backend
     assert "REPLACE_WITH_ACCOUNT_ID" in template_backend
     assert "REPLACE_WITH_TARGET_ENV" in template_backend
@@ -108,41 +108,39 @@ def test_rds_backup_retention_period_has_cost_policy_validation() -> None:
     assert expected_error in rds_module_variables_tf
 
 
-def test_new_aws_bootstrap_does_not_pin_old_dev_account() -> None:
+def test_dev_backend_and_tfvars_track_current_dev_account() -> None:
     backend_tf = _read("backend.tf")
     deploy_tfvars = _read("envs/dev/deploy.auto.tfvars.json")
 
-    assert "560271561793" not in backend_tf
-    assert "560271561793" not in deploy_tfvars
     assert "420615923610" not in backend_tf
     assert "420615923610" not in deploy_tfvars
+    assert "217139788460" not in backend_tf
+    assert "217139788460" not in deploy_tfvars
     assert "REPLACE_WITH_ACCOUNT_ID" not in backend_tf
-    assert "stockbrief-terraform-state-217139788460-ap-northeast-2" in backend_tf
+    assert "stockbrief-terraform-state-560271561793-ap-northeast-2" in backend_tf
     assert "vpc-0fdabc1f990027c99" not in deploy_tfvars
     assert "subnet-08f5ab10f709efd3e" not in deploy_tfvars
     assert "subnet-0940fc5ef61437e6d" not in deploy_tfvars
-    assert '"vpc_id": "vpc-03b24c84216090769"' in deploy_tfvars
-    assert "subnet-048cb5abccdf777d1" in deploy_tfvars
-    assert "subnet-04a3c75b6a6ba6b99" in deploy_tfvars
-    assert "rtb-0de4e4c9b811cd39c" in deploy_tfvars
+    assert '"vpc_id": "vpc-07b9f3920d93b65e1"' in deploy_tfvars
+    assert "subnet-08d89333a3c3e2924" in deploy_tfvars
+    assert "subnet-0e10680a556fa9ca8" in deploy_tfvars
+    assert "rtb-01a4330966a81395a" in deploy_tfvars
 
 
-def test_dev_deploy_tfvars_documents_low_cost_local_only_bootstrap() -> None:
+def test_dev_deploy_tfvars_tracks_hosted_web_bootstrap() -> None:
     deploy_tfvars = json.loads(_read("envs/dev/deploy.auto.tfvars.json"))
     terraform_readme = _read("README.md")
+    hosted_origin = "https://main.d20hgo2k8atldu.amplifyapp.com"
 
-    assert deploy_tfvars["enable_amplify"] is False
-    assert deploy_tfvars["amplify_cognito_redirect_uri"] == ""
+    assert deploy_tfvars["enable_amplify"] is True
+    assert deploy_tfvars["amplify_cognito_redirect_uri"] == f"{hosted_origin}/auth/callback"
     assert deploy_tfvars["agentcore_runtime_enabled"] is False
     assert deploy_tfvars["agentcore_runtime_container_uri"] == ""
-    assert "amplifyapp.com" not in deploy_tfvars["cors_allowed_origins"]
-    assert all("amplifyapp.com" not in url for url in deploy_tfvars["cognito_callback_urls"])
-    assert all("amplifyapp.com" not in url for url in deploy_tfvars["cognito_logout_urls"])
-    assert "low-cost," in terraform_readme
-    assert "local-only bootstrap posture" in terraform_readme
-    assert "track the callback, logout, and CORS change through" in terraform_readme
-    assert "#162" in terraform_readme
-    assert "keep `amplify_cognito_redirect_uri` empty" in terraform_readme
+    assert hosted_origin in deploy_tfvars["cors_allowed_origins"].split(",")
+    assert f"{hosted_origin}/auth/callback" in deploy_tfvars["cognito_callback_urls"]
+    assert f"{hosted_origin}/account" in deploy_tfvars["cognito_logout_urls"]
+    assert "current dev profile has Amplify enabled" in terraform_readme
+    assert "hosted FE callback/logout URLs" in terraform_readme
     assert "Keep `agentcore_runtime_container_uri` empty" in terraform_readme
 
 
@@ -154,20 +152,24 @@ def test_dev_account_transition_requires_backend_deploy_result_on_issue_52() -> 
     assert "record the success or expected guard failure on #52" in terraform_readme
 
 
-def test_dev_live_ingestion_enablement_is_tracked_after_low_cost_bootstrap() -> None:
+def test_dev_live_ingestion_smoke_preserves_reviewed_scheduler_jobs() -> None:
     deploy_tfvars = json.loads(_read("envs/dev/deploy.auto.tfvars.json"))
     terraform_readme = _read("README.md")
 
-    assert deploy_tfvars["enable_lambda_nat_egress"] is False
-    assert deploy_tfvars["lambda_nat_public_subnet_id"] == ""
-    assert deploy_tfvars["lambda_nat_route_subnet_ids"] == []
-    assert deploy_tfvars["enable_ingestion_scheduler"] is False
-    assert deploy_tfvars["ingestion_schedule_jobs"] == []
-    assert "For PR #161" in terraform_readme
-    assert "NAT egress and EventBridge Scheduler stay intentionally" in terraform_readme
-    assert "Track live ingestion" in terraform_readme
-    assert "cost approval" in terraform_readme
-    assert "runbook smoke evidence through #163" in terraform_readme
+    assert deploy_tfvars["enable_lambda_nat_egress"] is True
+    assert deploy_tfvars["lambda_nat_public_subnet_id"]
+    assert deploy_tfvars["lambda_nat_public_subnet_id"] not in deploy_tfvars["lambda_nat_route_subnet_ids"]
+    assert deploy_tfvars["lambda_nat_route_subnet_ids"] == deploy_tfvars["lambda_subnet_ids"]
+    assert deploy_tfvars["enable_ingestion_scheduler"] is True
+    assert {
+        job["provider"] for job in deploy_tfvars["ingestion_schedule_jobs"]
+    } == {"OpenDART", "NAVER_NEWS"}
+    assert all(job["tickers"] == ["005930"] for job in deploy_tfvars["ingestion_schedule_jobs"])
+    assert "live ingestion smoke window" in terraform_readme
+    assert "NAT egress is enabled" in terraform_readme
+    assert "do not remove those schedules" in terraform_readme
+    assert "turn NAT egress" in terraform_readme
+    assert "off again before pausing" in terraform_readme
 
 
 def test_agentcore_runtime_module_uses_cloudformation_resources() -> None:
@@ -291,18 +293,19 @@ def test_ingestion_pipeline_resources_are_wired_with_scheduler_disabled_by_defau
     assert 'resource "aws_vpc_endpoint" "s3"' in root_main_tf
     assert 'service_name      = "com.amazonaws.${var.aws_region}.s3"' in root_main_tf
     assert 'vpc_endpoint_type = "Gateway"' in root_main_tf
-    assert "route_table_ids   = var.vpc_endpoint_route_table_ids" in root_main_tf
+    assert "route_table_ids   = local.s3_gateway_endpoint_route_table_ids" in root_main_tf
     assert 'output "ingestion_raw_bucket_name"' in outputs_tf
     assert 'output "ingestion_raw_kms_key_arn"' in outputs_tf
     assert 'output "ingestion_dlq_url"' in outputs_tf
     assert 'output "ingestion_scheduler_names"' in outputs_tf
     assert "enable_ingestion_scheduler          = false" in dev_tfvars
-    assert deploy_tfvars["enable_ingestion_scheduler"] is False
-    assert deploy_tfvars["ingestion_schedule_jobs"] == []
+    assert deploy_tfvars["enable_ingestion_scheduler"] is True
+    assert len(deploy_tfvars["ingestion_schedule_jobs"]) == 2
 
 
 def test_lambda_nat_egress_is_toggleable_and_disabled_by_default() -> None:
     egress_tf = _read("egress.tf")
+    root_main_tf = _read("main.tf")
     variables_tf = _read("variables.tf")
     dev_tfvars = _read("envs/dev/terraform.tfvars.example")
     terraform_readme = _read("README.md")
@@ -320,6 +323,9 @@ def test_lambda_nat_egress_is_toggleable_and_disabled_by_default() -> None:
     assert "aws_route_table_association\" \"lambda_nat_egress" in egress_tf
     assert "local.lambda_nat_egress_inputs_valid" in egress_tf
     assert "local.lambda_nat_egress_enabled" in egress_tf
+    assert "s3_gateway_endpoint_route_table_ids" in root_main_tf
+    assert "aws_route_table.lambda_nat_egress[0].id" in root_main_tf
+    assert "local.s3_gateway_endpoint_route_table_ids" in root_main_tf
     assert "!contains(var.lambda_nat_route_subnet_ids, var.lambda_nat_public_subnet_id)" in egress_tf
     assert "not included in lambda_nat_route_subnet_ids" in egress_tf
     assert "precondition" in egress_tf
@@ -328,6 +334,7 @@ def test_lambda_nat_egress_is_toggleable_and_disabled_by_default() -> None:
     assert "Do not include" in terraform_readme
     assert "`lambda_nat_public_subnet_id` in `lambda_nat_route_subnet_ids`" in terraform_readme
     assert "turn it off after the evidence is collected" in terraform_readme
+    assert "managed NAT route table" in terraform_readme
     assert "remove the NAT Gateway and EIP" in deployment_doc
 
 
@@ -354,6 +361,7 @@ def test_dev_live_provider_nat_egress_uses_non_overlapping_subnets() -> None:
     assert "lambda_nat_public_subnet_id" in terraform_readme
     assert "lambda_nat_route_subnet_ids" in terraform_readme
     assert "The NAT public subnet must" in runbook
+    assert "raw archive writes continue through" in runbook
 
 
 def test_secret_versions_do_not_reclaim_manually_rotated_current_values() -> None:

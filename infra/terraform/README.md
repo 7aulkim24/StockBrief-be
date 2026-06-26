@@ -91,19 +91,22 @@ Environment variables required by `.github/workflows/backend-dev-deploy.yml`.
 
    For the first backend-only deployment, keep `enable_amplify = false`. Enable
    it only after the target GitHub organization approves the Amplify GitHub App.
-   Also keep `enable_ingestion_scheduler = false` until provider API credentials
-   are stored in Secrets Manager and the target ticker/job list is reviewed.
+   The current dev profile has Amplify enabled for the reviewed hosted FE URL.
+   Keep `enable_ingestion_scheduler = false` until provider API credentials are
+   stored in Secrets Manager and the target ticker/job list is reviewed. The
+   current dev profile keeps the reviewed OpenDART and NAVER schedules for
+   `005930`; do not remove those schedules in an unrelated NAT or networking PR.
+   That scheduler setting is current-state preservation, not part of the NAT
+   smoke rollback scope tracked in #192.
    Keep `enable_lambda_nat_egress = false` until live provider ingestion is
    approved because NAT Gateway creates hourly and data processing charges.
-   For PR #161, both NAT egress and EventBridge Scheduler stay intentionally
-   disabled for the low-cost dev account bootstrap. Track live ingestion
-   enablement, cost approval, and runbook smoke evidence through #163 before
-   changing either toggle.
-   The committed dev `deploy.auto.tfvars.json` follows this low-cost,
-   local-only bootstrap posture: Amplify is disabled and Cognito/CORS entries
-   include only localhost and loopback development origins. If a hosted dev FE
-   URL must be restored, track the callback, logout, and CORS change through
-   #162 before relying on that hosted login flow.
+   During the live ingestion smoke window, NAT egress is enabled for the Lambda
+   private subnets so `check_provider_egress` and one-ticker provider ingestion
+   can be verified from the deployed runtime. After smoke evidence is collected,
+   turn NAT egress off again before pausing the dev environment unless the
+   reviewed scheduler window still needs live provider access.
+   The committed dev `deploy.auto.tfvars.json` tracks the current 560 account,
+   hosted FE callback/logout URLs, and the reviewed provider schedules.
 
 4. If deploying Amplify through Terraform, install the AWS Amplify GitHub App for
    the target region/account and provide a GitHub personal access token through
@@ -371,6 +374,13 @@ itself keeps direct Internet Gateway egress. Do not include
 `lambda_nat_public_subnet_id` in `lambda_nat_route_subnet_ids`; Terraform
 preconditions fail the plan when those inputs overlap.
 
+When the S3 raw archive Gateway endpoint is enabled, Terraform also attaches
+that endpoint to the managed NAT route table. This keeps Lambda raw archive
+writes on the S3 Gateway endpoint path after the Lambda private subnets move
+from the original route table to the NAT route table. Review plans for this
+expected `aws_vpc_endpoint.s3` route table update together with the NAT route
+table associations.
+
 Keep this disabled unless a live provider ingestion smoke test is scheduled.
 When enabled, NAT Gateway hourly and data processing costs continue until the
 toggle is set back to `false` and Terraform is applied.
@@ -515,6 +525,9 @@ complete and recorded in the PR body:
   `ingestion_schedule_jobs` for more than one provider; the legacy
   `ingestion_schedule_provider` and `ingestion_schedule_tickers` variables are
   used only when `ingestion_schedule_jobs` is empty.
+  If the dev tfvars already contain reviewed scheduler jobs, keep those jobs as
+  current-state preservation. Do not fold scheduler disablement into the NAT rollback
+  unless a separate reviewer-approved scheduler change says so.
 
 If any check fails, keep the scheduler disabled and run ingestion manually until
 the missing credential, network egress, or provider behavior is fixed.

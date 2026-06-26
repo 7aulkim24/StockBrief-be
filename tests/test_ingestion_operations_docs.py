@@ -23,6 +23,9 @@ def test_ingestion_operations_runbook_exists_and_covers_manual_smoke() -> None:
     assert "does not send API keys or client secrets" in runbook
     assert "DNS, connection, and timeout failures" in runbook
     assert "aws lambda invoke" in runbook
+    assert "scripts/check_ingestion_smoke.py" in runbook
+    assert "--run-provider-ingest" in runbook
+    assert "It redacts secret-like fields" in runbook
     assert '"stockbrief_operation":"ingest_provider_batch"' in runbook
     assert '"provider":"OpenDART"' in runbook
     assert '"provider":"NAVER_NEWS"' in runbook
@@ -39,6 +42,8 @@ def test_ingestion_operations_runbook_exists_and_covers_manual_smoke() -> None:
     assert "stale_started_run_reconciled" in runbook
     assert "OpenDART` and `NAVER_NEWS` for ticker `005930`" in runbook
     assert "cron(0 18 ? * MON-FRI *)" in runbook
+    assert "current-state preservation" in runbook
+    assert "must not silently remove" in runbook
     assert '"stockbrief_operation":"check_ingestion_scheduler_enable_gate"' in runbook
     assert "scheduler_enable_ready=true" in runbook
     assert "Replace `YYYY-MM-DD`" in runbook

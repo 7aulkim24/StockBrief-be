@@ -29,7 +29,12 @@ payloads into PR comments, shared logs, or issue comments.
   terraform output external_api_secret_arn
   ```
 
-- `enable_ingestion_scheduler` remains `false`.
+- `enable_ingestion_scheduler` matches the reviewed dev tfvars. If schedules
+  already exist, keep them out of unrelated NAT or networking changes unless a
+  reviewer explicitly approves disabling scheduled ingestion.
+  Existing reviewed scheduler jobs are current-state preservation; #192 NAT
+  smoke rollback should turn off NAT egress only and must not silently remove
+  those jobs.
 - External API credentials are stored in Secrets Manager outside git. Use the
   repository helper so the secret payload is written to a temporary file and
   removed automatically:
@@ -46,12 +51,15 @@ payloads into PR comments, shared logs, or issue comments.
 - Lambda has outbound internet egress for OpenDART and NAVER. Verify it from the
   Lambda runtime after the readiness check:
 
-  NAT is intentionally disabled in the low-cost dev bootstrap. Before live
-  provider ingestion, set `enable_lambda_nat_egress = true`, choose a public
-  subnet for `lambda_nat_public_subnet_id`, and set
-  `lambda_nat_route_subnet_ids` to the Lambda private subnets in
-  `infra/terraform/envs/dev/deploy.auto.tfvars.json`. The NAT public subnet must
-  not be included in the route subnet list.
+  NAT may be enabled only during the live ingestion smoke window. When it is
+  enabled, `lambda_nat_public_subnet_id` must point at a public subnet with an
+  Internet Gateway route, and `lambda_nat_route_subnet_ids` must point at the
+  Lambda private subnets in `infra/terraform/envs/dev/deploy.auto.tfvars.json`.
+  The NAT public subnet must not be included in the route subnet list. Turn NAT
+  off again before pausing the dev environment if no live provider work remains.
+  When the S3 raw archive Gateway endpoint is enabled, the managed NAT route
+  table is also attached to that endpoint so raw archive writes continue through
+  the Gateway endpoint after the Lambda subnet route table association changes.
 
   ```bash
   aws lambda invoke \
@@ -67,6 +75,20 @@ payloads into PR comments, shared logs, or issue comments.
   `401`, `403`, or provider validation errors still prove network reachability.
   DNS, connection, and timeout failures mean provider egress is not ready. An
   S3 Gateway endpoint only covers raw archive writes to S3.
+- For repeated checks, use the redacted smoke helper instead of copying full
+  Lambda responses into shared logs:
+
+  ```bash
+  AWS_PROFILE=stockbrief-dev \
+  .venv/bin/python scripts/check_ingestion_smoke.py \
+    --function-name stockbrief-dev-api \
+    --providers OpenDART NAVER_NEWS \
+    --tickers 005930
+  ```
+
+  The helper runs readiness, raw archive write, provider egress, ingestion
+  status, and scheduler gate checks. It redacts secret-like fields and prints
+  only the status fields needed for PR evidence.
 - RDS is available and the latest migration has run:
 
   ```bash
@@ -107,6 +129,19 @@ aws lambda invoke \
   /tmp/stockbrief-naver-ingest-response.json \
   --profile stockbrief-dev \
   --region ap-northeast-2
+```
+
+When credentials and egress are ready, the same helper can run one manual
+provider ingest per selected provider:
+
+```bash
+AWS_PROFILE=stockbrief-dev \
+.venv/bin/python scripts/check_ingestion_smoke.py \
+  --function-name stockbrief-dev-api \
+  --providers OpenDART NAVER_NEWS \
+  --tickers 005930 \
+  --source-date YYYY-MM-DD \
+  --run-provider-ingest
 ```
 
 Expected result:
@@ -364,6 +399,8 @@ Do not enable EventBridge Scheduler until all conditions are true:
 - The reviewed dev scheduler job list is explicit. For the first scheduled
   rollout, use `OpenDART` and `NAVER_NEWS` for ticker `005930` with the weekday
   18:00 KST expression `cron(0 18 ? * MON-FRI *)`.
+  If those jobs are already present in dev tfvars, treat them as preserved
+  scheduler state rather than part of the NAT rollback scope.
 - Lambda outbound internet egress is confirmed by `check_provider_egress`.
 - The scheduler change is reviewed in a separate PR.
 

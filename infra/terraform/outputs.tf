@@ -76,7 +76,7 @@ output "cognito_issuer" {
 }
 
 output "cognito_hosted_ui_domain" {
-  description = "Cognito Hosted UI domain for the Next.js frontend."
+  description = "Cognito Hosted UI HTTPS URL for the Next.js frontend."
   value = module.cognito.hosted_ui_domain == "" ? "" : (
     "https://${module.cognito.hosted_ui_domain}.auth.${var.aws_region}.amazoncognito.com"
   )

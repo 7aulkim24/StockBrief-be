@@ -308,7 +308,13 @@ NEXT_PUBLIC_COGNITO_REDIRECT_URI
 ```
 
 `NEXT_PUBLIC_API_BASE_URL` is populated from the API Gateway output in
-Terraform. For local development against a deployed dev stack, regenerate
+Terraform. `NEXT_PUBLIC_COGNITO_HOSTED_UI_DOMAIN` should use the
+`cognito_hosted_ui_domain` Terraform output as-is, including the `https://`
+scheme. The frontend normalizes Hosted UI domains with or without the scheme,
+but manual Amplify variables and local `.env.local` files should follow the
+Terraform output shape so account switching stays predictable.
+
+For local development against a deployed dev stack, regenerate
 `StockBrief-fe/.env.local` from the active backend outputs:
 
 ```bash

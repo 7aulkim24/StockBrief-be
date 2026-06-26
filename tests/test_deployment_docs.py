@@ -129,13 +129,20 @@ def test_new_aws_bootstrap_documents_manual_amplify_account_switching() -> None:
     bootstrap_doc = (
         REPOSITORY_ROOT / "docs/engineering/NEW_AWS_BOOTSTRAP.md"
     ).read_text(encoding="utf-8")
+    terraform_readme = (REPOSITORY_ROOT / "infra/terraform/README.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "FE Amplify 콘솔 수동 생성 방법" in bootstrap_doc
     assert "현재 활성 AWS 계정마다 Amplify app을 하나 만든다" in bootstrap_doc
     assert "NEXT_PUBLIC_API_BASE_URL=<api_base_url>/v1" in bootstrap_doc
     assert "NEXT_PUBLIC_COGNITO_USER_POOL_ID=<cognito_user_pool_id>" in bootstrap_doc
     assert "NEXT_PUBLIC_COGNITO_APP_CLIENT_ID=<cognito_app_client_id>" in bootstrap_doc
-    assert "NEXT_PUBLIC_COGNITO_HOSTED_UI_DOMAIN=<cognito_hosted_ui_domain에서 https:// 제거>" in bootstrap_doc
+    assert "NEXT_PUBLIC_COGNITO_HOSTED_UI_DOMAIN=<cognito_hosted_ui_domain>" in bootstrap_doc
+    assert "Amplify environment" in bootstrap_doc
+    assert "로컬 `.env.local`에는 이 output 값을 그대로 넣는다" in bootstrap_doc
+    assert "`cognito_hosted_ui_domain` Terraform output as-is" in terraform_readme
+    assert "including the `https://`" in terraform_readme
     assert "npm run sync:dev-env -- --terraform-dir ../StockBrief-be/infra/terraform" in bootstrap_doc
     assert "로컬 `.env.local`, Amplify environment variable" in bootstrap_doc
     assert "callback: https://main.<amplify-default-domain>/auth/callback" in bootstrap_doc

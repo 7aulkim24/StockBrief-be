@@ -539,9 +539,15 @@ backend deployment IAM이다.
    NEXT_PUBLIC_COGNITO_REGION=ap-northeast-2
    NEXT_PUBLIC_COGNITO_USER_POOL_ID=<cognito_user_pool_id>
    NEXT_PUBLIC_COGNITO_APP_CLIENT_ID=<cognito_app_client_id>
-   NEXT_PUBLIC_COGNITO_HOSTED_UI_DOMAIN=<cognito_hosted_ui_domain에서 https:// 제거>
+   NEXT_PUBLIC_COGNITO_HOSTED_UI_DOMAIN=<cognito_hosted_ui_domain>
    NEXT_PUBLIC_COGNITO_REDIRECT_URI=https://main.<amplify-default-domain>/auth/callback
    ```
+
+   `cognito_hosted_ui_domain` Terraform output은
+   `https://...amazoncognito.com` 형태의 전체 URL이다. Amplify environment
+   variable과 로컬 `.env.local`에는 이 output 값을 그대로 넣는다. FE 인증
+   코드는 `https://`가 있거나 없어도 Hosted UI domain을 정규화하지만,
+   수동 설정 기준은 Terraform output 원문을 섞지 않고 그대로 쓰는 것이다.
 
 7. Amplify를 한 번 배포하고 default domain을 기록한다.
 8. target profile의 `cognito_callback_urls`와 `cognito_logout_urls`에 Amplify

@@ -84,7 +84,7 @@ payloads into PR comments, shared logs, or issue comments.
 
   ```bash
   AWS_PROFILE=stockbrief-dev \
-  .venv/bin/python scripts/check_ingestion_smoke.py \
+  uv run python scripts/check_ingestion_smoke.py \
     --function-name stockbrief-dev-api \
     --providers OpenDART NAVER_NEWS \
     --tickers 005930
@@ -140,7 +140,7 @@ provider ingest per selected provider:
 
 ```bash
 AWS_PROFILE=stockbrief-dev \
-.venv/bin/python scripts/check_ingestion_smoke.py \
+uv run python scripts/check_ingestion_smoke.py \
   --function-name stockbrief-dev-api \
   --providers OpenDART NAVER_NEWS \
   --tickers 005930 \

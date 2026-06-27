@@ -55,10 +55,10 @@ Environment variables required by `.github/workflows/backend-dev-deploy.yml`.
    ./scripts/package_api_lambda.sh
    ```
 
-   The script defaults `PYTHON_BIN` to `python3.13` to match `requires-python = ">=3.13"` in `pyproject.toml` and the `python3.13` Lambda runtime. It packages third-party dependencies as Linux `manylinux2014_x86_64` wheels for the Lambda zip, then copies the backend `app/` package into the zip root. The zip is deterministic and includes regular files only; directory entries and symlinks are excluded by policy so Lambda packages do not depend on filesystem link behavior. If your system resolves a different interpreter as `python3.13`, override the variable explicitly:
+   The script defaults `LAMBDA_PYTHON_VERSION` to `3.13` to match `requires-python = ">=3.13"` in `pyproject.toml` and the `python3.13` Lambda runtime. It exports locked production requirements from `uv.lock`, packages third-party dependencies as Linux `x86_64-manylinux2014` wheels for the Lambda zip, then copies the backend `app/` package into the zip root. The zip is deterministic and includes regular files only; directory entries and symlinks are excluded by policy so Lambda packages do not depend on filesystem link behavior. If you need to target a different Lambda runtime or architecture, override the packaging variables explicitly:
 
    ```bash
-   PYTHON_BIN=/usr/local/bin/python3.13 ./scripts/package_api_lambda.sh
+   LAMBDA_PYTHON_VERSION=3.13 LAMBDA_PYTHON_PLATFORM=aarch64-manylinux2014 ./scripts/package_api_lambda.sh
    ```
 
 2. Create a local dev tfvars file from the example:
@@ -287,8 +287,14 @@ The script installs Lambda-compatible third-party dependencies into `dist/lambda
 The Amplify module expects the connected repository to be `StockBrief-fe`, so `appRoot` is `.` and the build uses:
 
 ```bash
-npm ci
-npm run build
+nvm install 24
+nvm use 24
+corepack enable
+corepack prepare pnpm@11.7.0 --activate
+node -v
+pnpm install --frozen-lockfile --store-dir .pnpm-store
+node -v
+pnpm run build
 ```
 
 Build output target:
@@ -321,7 +327,7 @@ For local development against a deployed dev stack, regenerate
 
 ```bash
 cd ../StockBrief-fe
-npm run sync:dev-env -- --terraform-dir ../StockBrief-be/infra/terraform
+pnpm run sync:dev-env -- --terraform-dir ../StockBrief-be/infra/terraform
 ```
 
 The generated `.env.local` contains only public frontend values and must remain
@@ -670,7 +676,7 @@ Before switching the deployed API to `chat_provider = "bedrock"`, verify that
 the active AWS account can invoke the selected Bedrock model:
 
 ```bash
-.venv/bin/python scripts/check_bedrock_chat_smoke.py \
+uv run python scripts/check_bedrock_chat_smoke.py \
   --region ap-northeast-2 \
   --model-id apac.amazon.nova-micro-v1:0
 ```

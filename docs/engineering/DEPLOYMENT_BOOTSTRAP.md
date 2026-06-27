@@ -336,7 +336,7 @@ Resume checklist:
   export STOCKBRIEF_API_BASE_URL="$(terraform output -raw api_base_url)/v1"
   export STOCKBRIEF_AUTH_BEARER_TOKEN="REPLACE_WITH_SHORT_LIVED_TOKEN"
 
-  .venv/bin/python scripts/check_hosted_auth_smoke.py
+  uv run python scripts/check_hosted_auth_smoke.py
   ```
 
   The helper checks `/`, `/account`, `/auth/callback`, `GET /v1/me`,

@@ -151,7 +151,7 @@ jobs:
         uses: astral-sh/setup-uv@v8.2.0
 
       - name: Set up Python
-        run: uv python install
+        run: uv python install 3.13
 
       - name: Build Lambda package
         run: ./scripts/package_api_lambda.sh

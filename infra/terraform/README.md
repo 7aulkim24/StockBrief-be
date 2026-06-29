@@ -918,6 +918,19 @@ Operational alarm rollout checklist:
 - Prefer a team or operations group alias over a personal email address for
   `operational_alarm_email_addresses`.
 - Remember that email endpoints appear in Terraform plan and state metadata.
+- For local dev drift checks, prefer the guarded helper so local plans use the
+  same alarm recipient input shape as deploy:
+
+  ```bash
+  OPERATIONAL_ALARM_EMAILS_JSON='["REPLACE_WITH_ALERT_EMAIL"]' \
+    scripts/check_dev_terraform_plan.sh
+  ```
+
+  The helper exports `TF_VAR_operational_alarm_email_addresses` before running
+  `terraform plan -detailed-exitcode`. Without that input, a local plan can
+  propose removing the SNS topic, email subscriptions, and alarm actions created
+  by deploy. Use `--allow-empty-alarm-emails` only when notification removal is
+  intentional and reviewed.
 - After each dev/staging/prod apply, verify that API Gateway, Lambda, RDS, and
   RDS Proxy alarms show recent metric datapoints in CloudWatch.
 - Record whether the default thresholds need tuning for the environment's real

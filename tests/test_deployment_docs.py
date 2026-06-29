@@ -387,6 +387,129 @@ def test_external_api_secret_update_script_handles_secret_payload_safely() -> No
     assert "get-secret-value" not in script
 
 
+def test_dev_terraform_plan_guard_requires_alarm_email_input() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/check_dev_terraform_plan.sh",
+            "--terraform-dir",
+            "infra/terraform",
+            "--skip-package",
+        ],
+        cwd=REPOSITORY_ROOT,
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key != "OPERATIONAL_ALARM_EMAILS_JSON"
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Missing OPERATIONAL_ALARM_EMAILS_JSON" in result.stderr
+    assert "SNS topic, subscriptions, and alarm" in result.stderr
+    assert "--allow-empty-alarm-emails" in result.stderr
+
+
+def test_dev_terraform_plan_guard_passes_alarm_emails_to_terraform(
+    tmp_path: Path,
+) -> None:
+    terraform_dir = tmp_path / "tfroot"
+    terraform_dir.mkdir()
+    log_path = tmp_path / "terraform.log"
+    terraform_stub = tmp_path / "terraform"
+    terraform_stub.write_text(
+        "\n".join(
+            [
+                f"#!{sys.executable}",
+                "import os",
+                "import pathlib",
+                "import sys",
+                "",
+                'log_path = pathlib.Path(os.environ["TERRAFORM_STUB_LOG"])',
+                "args = sys.argv[1:]",
+                'operation = "unknown"',
+                "for arg in args:",
+                "    if arg in {'init', 'plan'}:",
+                "        operation = arg",
+                "        break",
+                'with log_path.open("a", encoding="utf-8") as log:',
+                '    log.write(operation + "|" + " ".join(args) + "|" + os.environ.get("TF_VAR_operational_alarm_email_addresses", "") + "\\n")',
+                'if operation == "plan":',
+                '    raise SystemExit(int(os.environ.get("TERRAFORM_STUB_PLAN_STATUS", "0")))',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    terraform_stub.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/check_dev_terraform_plan.sh",
+            "--terraform-dir",
+            str(terraform_dir),
+            "--backend-config",
+            "backends/dev.hcl",
+            "--var-file",
+            "envs/dev/deploy.auto.tfvars.json",
+            "--alarm-emails-json",
+            '["ops@example.com"]',
+            "--skip-package",
+        ],
+        cwd=REPOSITORY_ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "TERRAFORM_STUB_LOG": str(log_path),
+            "TERRAFORM_STUB_PLAN_STATUS": "2",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "Using 1 operational alarm email recipient" in result.stdout
+    assert "Terraform dev plan has changes" in result.stderr
+
+    calls = log_path.read_text(encoding="utf-8").splitlines()
+    assert calls[0].startswith("init|")
+    assert calls[1].startswith("plan|")
+    assert "-detailed-exitcode" in calls[1]
+    assert '-var-file=envs/dev/deploy.auto.tfvars.json' in calls[1]
+    assert calls[1].endswith('|["ops@example.com"]')
+
+
+def test_dev_terraform_plan_guard_is_documented() -> None:
+    deployment_doc = (
+        REPOSITORY_ROOT / "docs/engineering/DEPLOYMENT_BOOTSTRAP.md"
+    ).read_text(encoding="utf-8")
+    terraform_readme = (REPOSITORY_ROOT / "infra/terraform/README.md").read_text(
+        encoding="utf-8"
+    )
+    script = (REPOSITORY_ROOT / "scripts/check_dev_terraform_plan.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "scripts/check_dev_terraform_plan.sh" in deployment_doc
+    assert "OPERATIONAL_ALARM_EMAILS_JSON" in deployment_doc
+    assert "--allow-empty-alarm-emails" in deployment_doc
+    assert "SNS topic, SNS subscriptions, or alarm actions" in deployment_doc
+    assert "scripts/check_dev_terraform_plan.sh" in terraform_readme
+    assert "TF_VAR_operational_alarm_email_addresses" in terraform_readme
+    assert "terraform plan -detailed-exitcode" in terraform_readme
+    assert "OPERATIONAL_ALARM_EMAILS_JSON" in script
+    assert "TF_VAR_operational_alarm_email_addresses" in script
+    assert "--allow-empty-alarm-emails" in script
+    assert "terraform -chdir=\"$terraform_path\" plan" in script
+    assert "Terraform dev plan has no changes" in script
+    assert "Terraform dev plan has changes" in script
+
+
 def test_lambda_terraform_resource_tracks_package_hash() -> None:
     module_main = (
         REPOSITORY_ROOT / "infra/terraform/modules/api_lambda/main.tf"
@@ -579,7 +702,8 @@ def test_deployment_bootstrap_documents_dev_cost_pause_and_resume() -> None:
     assert "aws lambda delete-function-concurrency" in deployment_doc
     assert "Keep only reviewed `enable_ingestion_scheduler` jobs" in deployment_doc
     assert "Disable schedules before" in deployment_doc
-    assert "terraform plan -var-file=envs/dev/deploy.auto.tfvars.json" in deployment_doc
+    assert "scripts/check_dev_terraform_plan.sh" in deployment_doc
+    assert "OPERATIONAL_ALARM_EMAILS_JSON" in deployment_doc
     assert "Do not delete Terraform-managed resources from the AWS console" in deployment_doc
     assert "Do not use `terraform apply` as a blind repair step" in deployment_doc
 

@@ -307,12 +307,21 @@ Resume checklist:
 - Keep `enable_lambda_nat_egress = false` unless the day's work includes live
   OpenDART or NAVER ingestion. When it is enabled, run the provider smoke test
   and turn it off again before pausing the environment.
-- Run a no-change Terraform plan before new infrastructure work:
+- Run a guarded Terraform plan before new infrastructure work. Use the same
+  operational alarm recipient input that the deploy workflow receives through
+  the GitHub Environment. The helper builds the Lambda package first, exports
+  `TF_VAR_operational_alarm_email_addresses`, and then runs a detailed-exitcode
+  plan:
 
   ```bash
-  cd infra/terraform
-  terraform plan -var-file=envs/dev/deploy.auto.tfvars.json
+  OPERATIONAL_ALARM_EMAILS_JSON='["REPLACE_WITH_ALERT_EMAIL"]' \
+    scripts/check_dev_terraform_plan.sh
   ```
+
+  If notification removal is intentional, pass
+  `--allow-empty-alarm-emails` and record that choice in the PR. Do not apply a
+  plan that removes the SNS topic, SNS subscriptions, or alarm actions unless
+  that removal has been reviewed.
 
 - Run smoke checks after RDS and Lambda are healthy:
 

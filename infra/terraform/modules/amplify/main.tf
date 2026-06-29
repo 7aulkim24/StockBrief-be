@@ -28,17 +28,23 @@ resource "aws_amplify_app" "web" {
           phases:
             preBuild:
               commands:
-                - npm ci
+                - nvm install 24
+                - nvm use 24
+                - corepack enable
+                - corepack prepare pnpm@11.7.0 --activate
+                - node -v
+                - pnpm install --frozen-lockfile --store-dir .pnpm-store
             build:
               commands:
-                - npm run build
+                - node -v
+                - pnpm run build
           artifacts:
             baseDirectory: .next
             files:
               - '**/*'
           cache:
             paths:
-              - node_modules/**/*
+              - .pnpm-store/**/*
   YAML
 }
 

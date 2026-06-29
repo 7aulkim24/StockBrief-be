@@ -21,13 +21,11 @@ StockBrief는 한국 국내 주식 추천 후보 서비스다. 이 레포는 투
 
 ## 로컬 셋업
 
-Python 3.13 기준으로 개발한다. `.python-version`을 사용하면 버전을 맞추기 쉽다.
+Python 3.13 기준으로 개발한다. `mise install`로 런타임을 맞춘 뒤 `uv`로 의존성을 동기화한다.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -e ".[dev]"
+mise install
+uv sync --extra dev
 ```
 
 환경변수 설정:
@@ -46,7 +44,7 @@ docker compose up -d postgres
 ## 서버 실행
 
 ```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 헬스 체크:
@@ -58,20 +56,20 @@ curl http://127.0.0.1:8000/v1/health
 ## 데이터베이스 마이그레이션
 
 ```bash
-alembic upgrade head
+uv run alembic upgrade head
 ```
 
 롤백:
 
 ```bash
-alembic downgrade -1
+uv run alembic downgrade -1
 ```
 
 ## 시드 데이터
 
 ```bash
-alembic upgrade head
-python -m app.seed.seed_mock_data
+uv run alembic upgrade head
+uv run python -m app.seed.seed_mock_data
 ```
 
 로컬 API 확인:
@@ -84,23 +82,23 @@ curl "http://127.0.0.1:8000/v1/recommendations/candidates?limit=3"
 ## 테스트
 
 ```bash
-pytest
+uv run pytest
 ```
 
 특정 테스트 그룹:
 
 ```bash
-pytest tests/test_api_contract_snapshot.py   # API 계약 스냅샷
-pytest tests/test_recommendation_score_engine.py  # 스코어 엔진
-pytest tests/test_evidence_gate.py           # 에비던스 게이트
-pytest tests/test_chat_api.py                # 채팅 정책
-pytest tests/test_external_adapters.py       # 외부 어댑터
+uv run pytest tests/test_api_contract_snapshot.py   # API 계약 스냅샷
+uv run pytest tests/test_recommendation_score_engine.py  # 스코어 엔진
+uv run pytest tests/test_evidence_gate.py           # 에비던스 게이트
+uv run pytest tests/test_chat_api.py                # 채팅 정책
+uv run pytest tests/test_external_adapters.py       # 외부 어댑터
 ```
 
 ## 금지어 스캔
 
 ```bash
-python3 scripts/check_prohibited_terms.py
+uv run python scripts/check_prohibited_terms.py
 ```
 
 ## 구현된 엔드포인트

@@ -526,7 +526,7 @@ BE 배포 전환 절차:
    output으로 `.env.local`을 갱신한다.
 
    ```bash
-   npm run sync:dev-env -- --terraform-dir ../StockBrief-be/infra/terraform
+   pnpm run sync:dev-env -- --terraform-dir ../StockBrief-be/infra/terraform
    ```
 
 5. Terraform output으로 나온 BE 값을 같은 계정의 FE Amplify 환경 변수에

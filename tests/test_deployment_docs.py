@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -44,17 +45,84 @@ def test_lambda_packaging_script_targets_backend_repository_root() -> None:
     )
 
     assert 'API_DIR="${ROOT_DIR}"' in script
-    assert 'PYTHON_BIN="${PYTHON_BIN:-python3.13}"' in script
-    assert 'LAMBDA_PLATFORM="${LAMBDA_PLATFORM:-manylinux2014_x86_64}"' in script
-    assert '"boto3", "botocore", "uvicorn"' in script
-    assert '"${PYTHON_BIN}" -m pip install' in script
-    assert '--platform "${LAMBDA_PLATFORM}"' in script
+    assert 'LAMBDA_PYTHON_PLATFORM="${LAMBDA_PYTHON_PLATFORM:-x86_64-manylinux2014}"' in script
+    assert "uv export" in script
+    assert '--project "${API_DIR}"' in script
+    assert "--locked" in script
+    assert "--no-dev" in script
+    assert "--no-emit-project" in script
+    assert "--prune boto3" not in script
+    assert "--prune botocore" not in script
+    assert "--prune greenlet" in script
+    assert "--prune uvicorn" in script
+    assert "uv pip install" in script
+    assert "--no-deps" in script
+    assert '--python-platform "${LAMBDA_PYTHON_PLATFORM}"' in script
     assert "--only-binary=:all:" in script
     assert 'cp -R "${API_DIR}/app" "${BUILD_DIR}/app"' in script
     assert "Deterministic Lambda packages include regular files only" in script
     assert "symlinks are intentionally excluded" in script
     assert "find . -type f | LC_ALL=C sort | zip -X" in script
     assert "services/api" not in script
+
+
+def test_lambda_packaging_script_installs_locked_export(tmp_path) -> None:
+    uv_log = tmp_path / "uv.log"
+    uv_stub = tmp_path / "uv"
+    uv_stub.write_text(
+        "\n".join(
+            [
+                f"#!{sys.executable}",
+                "import os",
+                "import pathlib",
+                "import sys",
+                "",
+                'log_path = pathlib.Path(os.environ["UV_STUB_LOG"])',
+                "args = sys.argv[1:]",
+                'with log_path.open("a", encoding="utf-8") as log:',
+                '    log.write(" ".join(args) + "\\n")',
+                "",
+                'if args[:1] == ["export"]:',
+                '    output_file = pathlib.Path(args[args.index("--output-file") + 1])',
+                '    output_file.write_text("fastapi==0.115.14\\n", encoding="utf-8")',
+                'elif args[:2] == ["pip", "install"]:',
+                '    target = pathlib.Path(args[args.index("--target") + 1])',
+                "    target.mkdir(parents=True, exist_ok=True)",
+                "else:",
+                '    raise SystemExit(f"unexpected uv args: {args!r}")',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    uv_stub.chmod(0o755)
+
+    subprocess.run(
+        ["bash", str(REPOSITORY_ROOT / "scripts/package_api_lambda.sh")],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+            "UV_STUB_LOG": str(uv_log),
+        },
+        check=True,
+    )
+
+    calls = uv_log.read_text(encoding="utf-8").splitlines()
+    assert calls[0].startswith("export ")
+    assert "--project" in calls[0]
+    assert str(REPOSITORY_ROOT) in calls[0]
+    assert "--locked" in calls[0]
+    assert "--no-dev" in calls[0]
+    assert "--no-emit-project" in calls[0]
+    assert "--prune boto3" not in calls[0]
+    assert "--prune botocore" not in calls[0]
+    assert "--prune greenlet" in calls[0]
+    assert "--prune uvicorn" in calls[0]
+    assert "pyproject.toml" not in calls[0]
+    assert calls[1].startswith("pip install ")
+    assert "--no-deps" in calls[1]
+    assert "--requirement" in calls[1]
 
 
 def test_backend_ci_checks_lambda_packaging_script_on_pr() -> None:
@@ -186,7 +254,7 @@ def test_new_aws_bootstrap_documents_manual_amplify_account_switching() -> None:
     assert "로컬 `.env.local`에는 이 output 값을 그대로 넣는다" in bootstrap_doc
     assert "`cognito_hosted_ui_domain` Terraform output as-is" in terraform_readme
     assert "including the `https://`" in terraform_readme
-    assert "npm run sync:dev-env -- --terraform-dir ../StockBrief-be/infra/terraform" in bootstrap_doc
+    assert "pnpm run sync:dev-env -- --terraform-dir ../StockBrief-be/infra/terraform" in bootstrap_doc
     assert "로컬 `.env.local`, Amplify environment variable" in bootstrap_doc
     assert "callback: https://main.<amplify-default-domain>/auth/callback" in bootstrap_doc
     assert "Amplify access token이나" in bootstrap_doc
@@ -475,8 +543,24 @@ def test_terraform_readme_documents_frontend_local_env_sync() -> None:
         encoding="utf-8"
     )
 
-    assert "npm run sync:dev-env -- --terraform-dir ../StockBrief-be/infra/terraform" in terraform_readme
+    assert "pnpm run sync:dev-env -- --terraform-dir ../StockBrief-be/infra/terraform" in terraform_readme
     assert "The generated `.env.local` contains only public frontend values" in terraform_readme
+
+
+def test_amplify_build_spec_pins_node_and_pnpm() -> None:
+    amplify_module = (
+        REPOSITORY_ROOT / "infra/terraform/modules/amplify/main.tf"
+    ).read_text(encoding="utf-8")
+    terraform_readme = (REPOSITORY_ROOT / "infra/terraform/README.md").read_text(
+        encoding="utf-8"
+    )
+
+    for text in (amplify_module, terraform_readme):
+        assert "nvm install 24" in text
+        assert "nvm use 24" in text
+        assert "corepack prepare pnpm@11.7.0 --activate" in text
+        assert "pnpm install --frozen-lockfile --store-dir .pnpm-store" in text
+        assert "pnpm run build" in text
 
 
 def test_deployment_bootstrap_documents_dev_cost_pause_and_resume() -> None:

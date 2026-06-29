@@ -48,7 +48,7 @@ queries instead of copying SQL by hand. By default it does not connect to a
 database and only prints the PostgreSQL `EXPLAIN` statements:
 
 ```bash
-.venv/bin/python scripts/check_candidate_query_perf.py
+uv run python scripts/check_candidate_query_perf.py
 ```
 
 Offline mode intentionally compiles the current `CandidateService` private query
@@ -64,7 +64,7 @@ intentionally omits database URLs and secret values; verify the saved report
 contains only SQL text and query plans before attaching it to an issue or PR.
 
 ```bash
-.venv/bin/python scripts/check_candidate_query_perf.py \
+uv run python scripts/check_candidate_query_perf.py \
   --execute \
   --output /tmp/stockbrief-candidate-query-perf.json
 ```

@@ -225,9 +225,16 @@ def test_amplify_hosted_callback_can_be_overridden_after_domain_creation() -> No
 
 def test_api_lambda_role_has_vpc_and_agentcore_invoke_permissions() -> None:
     api_lambda_tf = _read("modules/api_lambda/main.tf")
+    api_lambda_variables_tf = _read("modules/api_lambda/variables.tf")
+    root_main_tf = _read("main.tf")
 
     assert "AWSLambdaVPCAccessExecutionRole" in api_lambda_tf
     assert "bedrock-agentcore:InvokeAgentRuntime" in api_lambda_tf
+    assert 'variable "agentcore_runtime_invoke_enabled"' in api_lambda_variables_tf
+    assert "count = var.agentcore_runtime_invoke_enabled ? 1 : 0" in api_lambda_tf
+    assert 'count = var.agentcore_runtime_arn == "" ? 0 : 1' not in api_lambda_tf
+    assert "agentcore_runtime_invoke_enabled = (" in root_main_tf
+    assert 'var.agentcore_runtime_container_uri != ""' in root_main_tf
 
 
 def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:

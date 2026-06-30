@@ -41,7 +41,7 @@ resource "aws_iam_role_policy" "secrets_access" {
 }
 
 data "aws_iam_policy_document" "agentcore_invoke" {
-  count = var.agentcore_runtime_arn == "" ? 0 : 1
+  count = var.agentcore_runtime_invoke_enabled ? 1 : 0
 
   statement {
     actions   = ["bedrock-agentcore:InvokeAgentRuntime"]
@@ -50,7 +50,7 @@ data "aws_iam_policy_document" "agentcore_invoke" {
 }
 
 resource "aws_iam_role_policy" "agentcore_invoke" {
-  count = var.agentcore_runtime_arn == "" ? 0 : 1
+  count = var.agentcore_runtime_invoke_enabled ? 1 : 0
 
   name   = "${var.name_prefix}-api-agentcore-invoke"
   role   = aws_iam_role.api_lambda.id

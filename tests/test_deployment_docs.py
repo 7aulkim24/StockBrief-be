@@ -967,6 +967,7 @@ def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
         ("DeploySchedulesByPrefix", "scheduler:CreateSchedule"),
         ("DeploySnsTopicsByPrefix", "sns:CreateTopic"),
         ("DeployCloudWatchAlarmsByPrefix", "cloudwatch:PutMetricAlarm"),
+        ("DeployLogGroupsByPrefix", "logs:ListTagsForResource"),
         ("DeployLogGroupsByPrefix", "logs:PutRetentionPolicy"),
     ]:
         assert action in _statement_actions(deploy_policy, scoped_sid)

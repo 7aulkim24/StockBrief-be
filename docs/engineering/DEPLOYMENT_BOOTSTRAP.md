@@ -95,7 +95,7 @@ terraform {
     bucket         = "stockbrief-terraform-state-<account-id>-<region>"
     key            = "stockbrief/dev/terraform.tfstate"
     region         = "<region>"
-    dynamodb_table = "stockbrief-terraform-locks"
+    use_lockfile   = true
     encrypt        = true
   }
 }

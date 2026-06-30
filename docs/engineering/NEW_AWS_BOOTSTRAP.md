@@ -302,7 +302,7 @@ Value:
 bucket         = "stockbrief-terraform-state-<account-id>-ap-northeast-2"
 key            = "stockbrief/dev-minsu/terraform.tfstate"
 region         = "ap-northeast-2"
-dynamodb_table = "stockbrief-terraform-locks"
+use_lockfile   = true
 encrypt        = true
 ```
 

@@ -384,6 +384,8 @@ cat >"${tmpdir}/deploy-policy.json" <<POLICY
         "arn:aws:logs:${region}:${account_id}:log-group:/aws/amplify/${resource_name_prefix}-web:*",
         "arn:aws:logs:${region}:${account_id}:log-group:/aws/apigateway/${resource_name_prefix}-http-api",
         "arn:aws:logs:${region}:${account_id}:log-group:/aws/apigateway/${resource_name_prefix}-http-api:*",
+        "arn:aws:logs:${region}:${account_id}:log-group:/aws/bedrock-agentcore/${resource_name_prefix//-/_}_agent",
+        "arn:aws:logs:${region}:${account_id}:log-group:/aws/bedrock-agentcore/${resource_name_prefix//-/_}_agent:*",
         "arn:aws:logs:${region}:${account_id}:log-group:/aws/lambda/${resource_name_prefix}-api",
         "arn:aws:logs:${region}:${account_id}:log-group:/aws/lambda/${resource_name_prefix}-api:*",
         "arn:aws:logs:${region}:${account_id}:log-group:/aws/rds/${resource_name_prefix}-postgres",
@@ -735,7 +737,7 @@ Terraform backend:
   bucket         = "${state_bucket}"
   key            = "stockbrief/${environment}/terraform.tfstate"
   region         = "${region}"
-  dynamodb_table = "${lock_table}"
+  use_lockfile   = true
 
 GitHub Environment variables (${environment}):
   ${deploy_role_var}=${role_arn}

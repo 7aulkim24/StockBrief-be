@@ -2,12 +2,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.agentcore_runtime import app as runtime_app
 from app.config import Settings, get_settings
 from app.main import app
 from app.services.candidate_service import CandidateService
 from app.services.chat import ChatProviderInput, ChatProviderUnavailable, compose_chat_answer
-from app.services.chat.providers import AgentCoreChatProvider, chat_provider_for
+from app.services.chat.providers import chat_provider_for
+from app.services.chat.runtime_provider import AgentCoreChatProvider
 from app.services.evidence_service import EvidenceService
 
 
@@ -142,7 +142,7 @@ def test_chat_api_agentcore_runtime_failure_fails_closed(
         raise ChatProviderUnavailable("simulated runtime failure")
 
     monkeypatch.setattr(
-        "app.services.chat.providers.AgentCoreChatProvider._invoke_runtime",
+        "app.services.chat.runtime_provider.AgentCoreChatProvider._invoke_runtime",
         unavailable_runtime,
     )
     app.dependency_overrides[get_settings] = override_settings
@@ -164,6 +164,9 @@ def test_agentcore_runtime_dev_invocation_records_tool_trace(
     seeded_session: Session,
     monkeypatch,
 ) -> None:
+    pytest.importorskip("strands")
+    from app.agentcore_runtime import app as runtime_app
+
     request = _provider_input(seeded_session)
     baseline = compose_chat_answer(
         message=request.message,

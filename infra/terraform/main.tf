@@ -265,6 +265,9 @@ module "api_lambda" {
   ingestion_raw_bucket_arn  = try(aws_s3_bucket.ingestion_raw[0].arn, "")
   ingestion_raw_kms_key_arn = try(aws_kms_key.ingestion_raw[0].arn, "")
   agentcore_runtime_arn     = module.agentcore_runtime.runtime_arn
+  agentcore_runtime_invoke_enabled = (
+    var.agentcore_runtime_enabled && var.agentcore_runtime_container_uri != ""
+  )
   bedrock_chat_foundation_model_arns = (
     var.chat_provider == "bedrock" ? local.effective_bedrock_chat_foundation_model_arns : []
   )

@@ -58,8 +58,13 @@ class CandidateService:
         market: str | None,
         sector: str | None,
         limit: int,
+        score_version: str | None = None,
     ) -> RecommendationCandidateListResponse:
-        rows = self._candidate_rows(market=market, sector=sector)
+        rows = self._candidate_rows(
+            market=market,
+            sector=sector,
+            score_version=score_version,
+        )
         candidates = self._candidate_responses(rows)
         candidates = _sort_candidates(candidates, risk_profile)[:limit]
         return RecommendationCandidateListResponse(
@@ -69,8 +74,13 @@ class CandidateService:
             disclaimer=DISCLAIMER,
         )
 
-    def get_recommendation_candidate(self, ticker: str) -> RecommendationCandidateResponse:
-        stock, score = self.candidate_row(ticker)
+    def get_recommendation_candidate(
+        self,
+        ticker: str,
+        *,
+        score_version: str | None = None,
+    ) -> RecommendationCandidateResponse:
+        stock, score = self.candidate_row(ticker, score_version=score_version)
         return self.candidate_response(stock, score)
 
     def list_stock_candidates(
@@ -82,8 +92,13 @@ class CandidateService:
         sort: str,
         limit: int,
         offset: int,
+        score_version: str | None = None,
     ) -> StockCandidateContractData:
-        base_statement = self._stock_candidate_base_statement(market=market, sector=sector)
+        base_statement = self._stock_candidate_base_statement(
+            market=market,
+            sector=sector,
+            score_version=score_version,
+        )
         count_statement, as_of_statement = self._stock_candidate_aggregate_statements(
             base_statement,
         )
@@ -111,7 +126,9 @@ class CandidateService:
         *,
         market: str | None,
         sector: str | None,
+        score_version: str | None = None,
     ):
+        selected_scores = self._selected_scores_subquery(score_version)
         risk_counts = (
             select(
                 RiskSignal.ticker.label("ticker"),
@@ -128,12 +145,14 @@ class CandidateService:
                 risk_counts.c.risk_count,
             )
             .join(RecommendationScore, RecommendationScore.ticker == Stock.ticker)
+            .join(selected_scores, selected_scores.c.score_id == RecommendationScore.id)
             .outerjoin(
                 risk_counts,
                 (risk_counts.c.ticker == Stock.ticker)
                 & (risk_counts.c.as_of_date == RecommendationScore.as_of_date),
             )
             .where(
+                selected_scores.c.score_rank == 1,
                 RecommendationScore.is_candidate_eligible.is_(True),
                 RecommendationScore.evidence_count >= 2,
                 RecommendationScore.missing_data.is_not(None),
@@ -227,8 +246,13 @@ class CandidateService:
             Stock.ticker.asc(),
         )
 
-    def stock_score(self, ticker: str) -> StockScoreResponse:
-        _, score = self.candidate_row(ticker)
+    def stock_score(
+        self,
+        ticker: str,
+        *,
+        score_version: str | None = None,
+    ) -> StockScoreResponse:
+        _, score = self.candidate_row(ticker, score_version=score_version)
         candidate = self.candidate_response_from_score(score)
         return StockScoreResponse(
             ticker=candidate.ticker,
@@ -263,12 +287,19 @@ class CandidateService:
             )
         return stock
 
-    def candidate_row(self, ticker: str) -> tuple[Stock, RecommendationScore]:
+    def candidate_row(
+        self,
+        ticker: str,
+        *,
+        score_version: str | None = None,
+    ) -> tuple[Stock, RecommendationScore]:
         validate_ticker(ticker)
+        selected_scores = self._selected_scores_subquery(score_version)
         row = self.session.execute(
             select(Stock, RecommendationScore)
             .join(RecommendationScore, RecommendationScore.ticker == Stock.ticker)
-            .where(Stock.ticker == ticker)
+            .join(selected_scores, selected_scores.c.score_id == RecommendationScore.id)
+            .where(Stock.ticker == ticker, selected_scores.c.score_rank == 1)
         ).first()
         if row is None:
             raise HTTPException(
@@ -344,11 +375,17 @@ class CandidateService:
         *,
         market: str | None,
         sector: str | None,
+        score_version: str | None = None,
     ) -> list[tuple[Stock, RecommendationScore]]:
+        selected_scores = self._selected_scores_subquery(score_version)
         statement = (
             select(Stock, RecommendationScore)
             .join(RecommendationScore, RecommendationScore.ticker == Stock.ticker)
-            .where(RecommendationScore.is_candidate_eligible.is_(True))
+            .join(selected_scores, selected_scores.c.score_id == RecommendationScore.id)
+            .where(
+                selected_scores.c.score_rank == 1,
+                RecommendationScore.is_candidate_eligible.is_(True),
+            )
         )
         if market:
             statement = statement.where(Stock.market == market)
@@ -362,6 +399,24 @@ class CandidateService:
             for stock, score in rows
             if _passes_evidence_gate(stock, score, risk_pairs)
         ]
+
+    def _selected_scores_subquery(self, score_version: str | None):
+        statement = select(
+            RecommendationScore.id.label("score_id"),
+            func.row_number()
+            .over(
+                partition_by=RecommendationScore.ticker,
+                order_by=(
+                    RecommendationScore.as_of_date.desc(),
+                    RecommendationScore.created_at.desc(),
+                    RecommendationScore.id.desc(),
+                ),
+            )
+            .label("score_rank"),
+        )
+        if score_version:
+            statement = statement.where(RecommendationScore.score_version == score_version)
+        return statement.subquery()
 
     def _candidate_responses(
         self,

@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -7,7 +7,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, event, select
 from sqlalchemy.orm import Session
 
-from app.orm import EvidenceChunk, RecommendationScore, SourceDocument
+from app.orm import EvidenceChunk, RecommendationScore, RiskSignal, SourceDocument
+from app.services.candidate_service import CandidateService
+from app.services.recommendation.materializer import materialize_recommendation_scores
 
 
 PROHIBITED_KOREAN_TERMS = [
@@ -182,6 +184,103 @@ def test_get_recommendation_candidate_detail(
     assert candidate["name"] == "삼성전자"
     assert candidate["recommendation_reasons"]
     assert candidate["risk_tags"]
+
+
+def test_candidate_api_reads_latest_score_snapshot(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    current = seeded_session.scalars(
+        select(RecommendationScore).where(RecommendationScore.ticker == "005930")
+    ).one()
+    seeded_session.add(
+        RecommendationScore(
+            ticker="005930",
+            as_of_date=date(2026, 6, 10),
+            score_version="selection-test",
+            total_score=Decimal("12.34"),
+            evidence_level="medium",
+            component_scores=current.component_scores,
+            evidence_count=2,
+            missing_data=["selection.inputs"],
+            data_freshness={"as_of": "2026-06-10"},
+            is_candidate_eligible=True,
+        )
+    )
+    seeded_session.add(
+        RiskSignal(
+            ticker="005930",
+            as_of_date=date(2026, 6, 10),
+            risk_tag="selection_risk",
+            severity="low",
+            penalty_points=Decimal("0.00"),
+            display_text="선택 규칙 확인용 리스크입니다.",
+            description="선택 규칙 확인용 리스크입니다.",
+            evidence_ids=[],
+        )
+    )
+    seeded_session.commit()
+
+    detail_response = seeded_api_client.get("/v1/recommendations/candidates/005930")
+    list_response = seeded_api_client.get(
+        "/v1/recommendations/candidates",
+        params={"limit": 100},
+    )
+
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["recommendation_score"] == 12.34
+    assert detail["missing_data"] == ["selection.inputs"]
+    assert detail["data_freshness"]["as_of"] == "2026-06-10"
+
+    assert list_response.status_code == 200
+    items = list_response.json()["items"]
+    selected = [item for item in items if item["ticker"] == "005930"]
+    assert len(selected) == 1
+    assert selected[0]["recommendation_score"] == 12.34
+
+
+def test_candidate_service_prefers_requested_score_version(
+    seeded_session: Session,
+) -> None:
+    current = seeded_session.scalars(
+        select(RecommendationScore).where(RecommendationScore.ticker == "005930")
+    ).one()
+    materialize_recommendation_scores(
+        seeded_session,
+        as_of_date=date(2026, 6, 10),
+        tickers=["005930"],
+    )
+
+    _, selected = CandidateService(seeded_session).candidate_row(
+        "005930",
+        score_version=current.score_version,
+    )
+
+    assert selected.id == current.id
+
+
+def test_candidate_api_exposes_weak_materialized_score_details(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    seeded_session.execute(delete(EvidenceChunk).where(EvidenceChunk.ticker == "005930"))
+    materialize_recommendation_scores(
+        seeded_session,
+        as_of_date=date(2026, 6, 10),
+        tickers=["005930"],
+    )
+    seeded_session.commit()
+
+    response = seeded_api_client.get("/v1/recommendations/candidates/005930")
+
+    assert response.status_code == 200
+    candidate = response.json()
+    assert candidate["evidence_level"] == "weak"
+    assert candidate["evidence_count"] == 0
+    assert "news_attention.inputs" in candidate["missing_data"]
+    assert "disclosure_event.inputs" in candidate["missing_data"]
+    assert candidate["data_freshness"]["as_of"] == "2026-06-10"
 
 
 def test_get_stock_score(seeded_api_client: TestClient) -> None:

@@ -737,7 +737,7 @@ Terraform backend:
   bucket         = "${state_bucket}"
   key            = "stockbrief/${environment}/terraform.tfstate"
   region         = "${region}"
-  use_lockfile   = true
+  dynamodb_table = "${lock_table}"
 
 GitHub Environment variables (${environment}):
   ${deploy_role_var}=${role_arn}

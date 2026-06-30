@@ -20,8 +20,12 @@ def test_multi_account_dev_profile_templates_are_available() -> None:
     assert 'regex("^dev-[a-z0-9][a-z0-9-]*$"' in variables_tf
     assert 'bucket         = "stockbrief-terraform-state-560271561793-ap-northeast-2"' in dev_backend
     assert 'key            = "stockbrief/dev/terraform.tfstate"' in dev_backend
+    assert 'dynamodb_table = "stockbrief-terraform-locks"' in dev_backend
+    assert "use_lockfile" not in dev_backend
     assert "REPLACE_WITH_ACCOUNT_ID" in template_backend
     assert "REPLACE_WITH_TARGET_ENV" in template_backend
+    assert 'dynamodb_table = "stockbrief-terraform-locks"' in template_backend
+    assert "use_lockfile" not in template_backend
     assert not (TERRAFORM_ROOT / "backends/dev-junwoo.hcl").exists()
     assert not (TERRAFORM_ROOT / "envs/dev-junwoo/deploy.auto.tfvars.json").exists()
     assert template_tfvars["environment"] == "REPLACE_WITH_TARGET_ENV"

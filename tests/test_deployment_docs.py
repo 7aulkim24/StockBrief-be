@@ -251,6 +251,9 @@ def test_backend_dev_deploy_supports_target_environment_profiles() -> None:
     assert "`target_env=dev-*`만 허용" in bootstrap_doc
     assert "TF_BACKEND_CONFIG_HCL" in bootstrap_doc
     assert "TFVARS_JSON" in bootstrap_doc
+    assert "--write-deploy-profile-vars" in bootstrap_doc
+    assert "--vpc-id" in bootstrap_doc
+    assert "skeleton `TFVARS_JSON`" in bootstrap_doc
     assert "`amplify_cognito_redirect_uri`는 `enable_amplify=false`" in bootstrap_doc
     assert "`agentcore_runtime_container_uri`는 `agentcore_runtime_enabled=false`" in bootstrap_doc
 
@@ -1095,9 +1098,11 @@ def test_bootstrap_dry_run_guards_write_actions() -> None:
         "run_change gh api --method PUT",
         "run_change gh api --method POST",
         "run_change gh api --method DELETE",
-        "run_change gh variable set",
     ]:
         assert write_call in bootstrap_script
+    assert "set_github_variable()" in bootstrap_script
+    assert "DRY RUN: gh variable set %s --repo %s --env %s --body <value>" in bootstrap_script
+    assert "gh variable set \"$variable_name\"" in bootstrap_script
 
     assert "scripts/bootstrap_github_oidc.sh --dry-run" in deployment_doc
     assert (

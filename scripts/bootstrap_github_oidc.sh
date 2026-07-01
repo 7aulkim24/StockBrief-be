@@ -30,6 +30,16 @@ Options:
   --lock-table VALUE        Terraform lock table. Default: stockbrief-terraform-locks
   --role-name VALUE         IAM deploy role name. Default: stockbrief-<environment>-github-actions-deploy
   --alarm-emails-json VALUE JSON array for OPERATIONAL_ALARM_EMAILS_JSON. Default: []
+  --write-deploy-profile-vars
+                            Also write TF_BACKEND_CONFIG_HCL and TFVARS_JSON to the
+                            selected GitHub Environment. Default: false
+  --vpc-id VALUE            Optional VPC ID for generated TFVARS_JSON.
+  --db-subnet-ids VALUE     Optional comma-separated DB subnet IDs for generated TFVARS_JSON.
+  --lambda-subnet-ids VALUE Optional comma-separated Lambda subnet IDs for generated TFVARS_JSON.
+  --vpc-endpoint-route-table-ids VALUE
+                            Optional comma-separated route table IDs for generated TFVARS_JSON.
+  --cognito-domain-prefix VALUE
+                            Optional Cognito Hosted UI domain prefix for generated TFVARS_JSON.
   --dry-run                 Print planned write actions without changing AWS or GitHub resources.
   -h, --help                Show this help.
 USAGE
@@ -55,6 +65,19 @@ run_change() {
   "$@" >/dev/null
 }
 
+set_github_variable() {
+  variable_name="$1"
+  variable_value="$2"
+
+  if [ "$dry_run" = "true" ]; then
+    printf 'DRY RUN: gh variable set %s --repo %s --env %s --body <value>\n' \
+      "$variable_name" "$repo_full_name" "$environment"
+    return 0
+  fi
+
+  gh variable set "$variable_name" --repo "$repo_full_name" --env "$environment" --body "$variable_value" >/dev/null
+}
+
 environment="dev"
 region="ap-northeast-2"
 github_owner="80-hours-a-week"
@@ -64,6 +87,12 @@ state_bucket=""
 lock_table="stockbrief-terraform-locks"
 role_name=""
 alarm_emails_json="[]"
+write_deploy_profile_vars="false"
+vpc_id=""
+db_subnet_ids_csv=""
+lambda_subnet_ids_csv=""
+vpc_endpoint_route_table_ids_csv=""
+cognito_domain_prefix=""
 dry_run="false"
 
 while [ "$#" -gt 0 ]; do
@@ -102,6 +131,30 @@ while [ "$#" -gt 0 ]; do
       ;;
     --alarm-emails-json)
       alarm_emails_json="$2"
+      shift 2
+      ;;
+    --write-deploy-profile-vars)
+      write_deploy_profile_vars="true"
+      shift
+      ;;
+    --vpc-id)
+      vpc_id="$2"
+      shift 2
+      ;;
+    --db-subnet-ids)
+      db_subnet_ids_csv="$2"
+      shift 2
+      ;;
+    --lambda-subnet-ids)
+      lambda_subnet_ids_csv="$2"
+      shift 2
+      ;;
+    --vpc-endpoint-route-table-ids)
+      vpc_endpoint_route_table_ids_csv="$2"
+      shift 2
+      ;;
+    --cognito-domain-prefix)
+      cognito_domain_prefix="$2"
       shift 2
       ;;
     --dry-run)
@@ -168,6 +221,7 @@ role_arn="arn:aws:iam::${account_id}:role/${role_name}"
 resource_name_prefix="stockbrief-${environment}"
 env_upper="$(printf '%s' "$environment" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
 deploy_role_var="AWS_${env_upper}_DEPLOY_ROLE_ARN"
+state_key="stockbrief/${environment}/terraform.tfstate"
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -641,6 +695,118 @@ cat >"${tmpdir}/deploy-policy.json" <<POLICY
 }
 POLICY
 
+if [ "$write_deploy_profile_vars" = "true" ]; then
+  cat >"${tmpdir}/backend.hcl" <<BACKEND
+bucket         = "${state_bucket}"
+key            = "${state_key}"
+region         = "${region}"
+dynamodb_table = "${lock_table}"
+encrypt        = true
+BACKEND
+
+  if ! python3 - \
+    "$environment" \
+    "$region" \
+    "$account_id" \
+    "$vpc_id" \
+    "$db_subnet_ids_csv" \
+    "$lambda_subnet_ids_csv" \
+    "$vpc_endpoint_route_table_ids_csv" \
+    "$cognito_domain_prefix" >"${tmpdir}/tfvars.json" <<'PY'
+import json
+import sys
+
+
+def csv_list(raw: str) -> list[str]:
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+environment = sys.argv[1]
+region = sys.argv[2]
+account_id = sys.argv[3]
+vpc_id = sys.argv[4].strip()
+db_subnet_ids = csv_list(sys.argv[5])
+lambda_subnet_ids = csv_list(sys.argv[6])
+route_table_ids = csv_list(sys.argv[7])
+cognito_domain_prefix = sys.argv[8].strip() or f"stockbrief-{environment}-{account_id}"
+
+network_inputs_present = any(
+    [vpc_id, db_subnet_ids, lambda_subnet_ids, route_table_ids]
+)
+if network_inputs_present:
+    errors = []
+    if not vpc_id:
+        errors.append("--vpc-id is required when generating a networked TFVARS_JSON.")
+    if len(db_subnet_ids) < 2:
+        errors.append("--db-subnet-ids must include at least two subnet IDs.")
+    if not lambda_subnet_ids:
+        errors.append("--lambda-subnet-ids must include at least one subnet ID.")
+    if errors:
+        for error in errors:
+            print(error, file=sys.stderr)
+        sys.exit(1)
+
+profile = {
+    "environment": environment,
+    "aws_region": region,
+    "api_lambda_package_path": "../../dist/stockbrief-api-lambda.zip",
+    "cors_allowed_origins": (
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://localhost:3001,http://127.0.0.1:3001"
+    ),
+    "chat_provider": "mock",
+    "enable_amplify": False,
+    "amplify_repository_url": "https://github.com/80-hours-a-week/StockBrief-fe",
+    "amplify_branch_name": "main",
+    "amplify_cognito_redirect_uri": "",
+    "cognito_callback_urls": [
+        "http://localhost:3000/auth/callback",
+        "http://localhost:3001/auth/callback",
+        "http://127.0.0.1:3000/auth/callback",
+        "http://127.0.0.1:3001/auth/callback",
+    ],
+    "cognito_logout_urls": [
+        "http://localhost:3000/account",
+        "http://localhost:3001/account",
+        "http://127.0.0.1:3000/account",
+        "http://127.0.0.1:3001/account",
+    ],
+    "cognito_hosted_ui_domain_prefix": cognito_domain_prefix,
+    "db_instance_class": "db.t4g.micro",
+    "db_allocated_storage_gb": 20,
+    "db_deletion_protection": False,
+    "db_skip_final_snapshot": True,
+    "db_backup_retention_period": 1,
+    "vpc_id": vpc_id,
+    "db_subnet_ids": db_subnet_ids,
+    "db_security_group_ids": [],
+    "rds_proxy_security_group_ids": [],
+    "enable_rds_proxy": False,
+    "lambda_subnet_ids": lambda_subnet_ids,
+    "lambda_security_group_ids": [],
+    "vpc_endpoint_route_table_ids": route_table_ids,
+    "enable_lambda_nat_egress": False,
+    "lambda_nat_create_public_subnet": False,
+    "lambda_nat_public_subnet_id": "",
+    "lambda_nat_public_subnet_cidr_block": "",
+    "lambda_nat_public_subnet_availability_zone": "",
+    "lambda_nat_internet_gateway_id": "",
+    "lambda_nat_create_internet_gateway": False,
+    "lambda_nat_route_subnet_ids": [],
+    "agentcore_runtime_enabled": False,
+    "agentcore_runtime_container_uri": "",
+    "agentcore_network_mode": "PUBLIC",
+    "enable_ingestion_scheduler": False,
+    "ingestion_schedule_jobs": [],
+}
+
+print(json.dumps(profile, ensure_ascii=False, indent=2))
+PY
+  then
+    exit 1
+  fi
+fi
+
 if aws iam get-role --role-name "$role_name" >/dev/null 2>&1; then
   echo "Updating IAM role trust policy: ${role_name}"
   run_change aws iam update-assume-role-policy \
@@ -726,8 +892,13 @@ EOF
 fi
 
 echo "Setting GitHub Environment variables on ${repo_full_name}/${environment}"
-run_change gh variable set "$deploy_role_var" --repo "$repo_full_name" --env "$environment" --body "$role_arn"
-run_change gh variable set OPERATIONAL_ALARM_EMAILS_JSON --repo "$repo_full_name" --env "$environment" --body "$alarm_emails_json"
+set_github_variable "$deploy_role_var" "$role_arn"
+set_github_variable OPERATIONAL_ALARM_EMAILS_JSON "$alarm_emails_json"
+
+if [ "$write_deploy_profile_vars" = "true" ]; then
+  set_github_variable TF_BACKEND_CONFIG_HCL "$(cat "${tmpdir}/backend.hcl")"
+  set_github_variable TFVARS_JSON "$(cat "${tmpdir}/tfvars.json")"
+fi
 
 cat <<SUMMARY
 
@@ -735,16 +906,18 @@ Bootstrap complete.
 
 Terraform backend:
   bucket         = "${state_bucket}"
-  key            = "stockbrief/${environment}/terraform.tfstate"
+  key            = "${state_key}"
   region         = "${region}"
   dynamodb_table = "${lock_table}"
 
 GitHub Environment variables (${environment}):
   ${deploy_role_var}=${role_arn}
   OPERATIONAL_ALARM_EMAILS_JSON=<configured JSON array>
+  TF_BACKEND_CONFIG_HCL=$([ "$write_deploy_profile_vars" = "true" ] && printf '<generated>' || printf '<not configured>')
+  TFVARS_JSON=$([ "$write_deploy_profile_vars" = "true" ] && printf '<generated>' || printf '<not configured>')
 
 Next:
-  1. Make sure infra/terraform/backend.tf matches the backend above.
-  2. Make sure infra/terraform/envs/dev/deploy.auto.tfvars.json matches this AWS account and network.
+  1. If TF_BACKEND_CONFIG_HCL/TFVARS_JSON are not configured, add a profile file or rerun with --write-deploy-profile-vars.
+  2. Review the selected Terraform backend and generated profile before apply=true.
   3. Merge the backend deployment workflow PR.
 SUMMARY

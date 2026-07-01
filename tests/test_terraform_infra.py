@@ -409,6 +409,8 @@ def test_lambda_nat_egress_is_toggleable_and_disabled_by_default() -> None:
     assert "s3_gateway_endpoint_route_table_ids" in root_main_tf
     assert "aws_route_table.lambda_nat_egress[0].id" in root_main_tf
     assert "local.s3_gateway_endpoint_route_table_ids" in root_main_tf
+    assert "length(var.vpc_endpoint_route_table_ids) > 0 || local.lambda_nat_egress_enabled" in root_main_tf
+    assert "length(local.s3_gateway_endpoint_route_table_ids) > 0" not in root_main_tf
     assert "!contains(var.lambda_nat_route_subnet_ids, local.effective_lambda_nat_public_subnet_id)" in egress_tf
     assert "var.lambda_nat_public_subnet_id == \"\"" in egress_tf
     assert "var.lambda_nat_create_internet_gateway && var.lambda_nat_internet_gateway_id != \"\"" in egress_tf

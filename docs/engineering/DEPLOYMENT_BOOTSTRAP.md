@@ -55,6 +55,7 @@ scripts/bootstrap_github_oidc.sh \
   --region ap-northeast-2 \
   --github-owner 80-hours-a-week \
   --github-repo StockBrief-be \
+  --write-deploy-profile-vars \
   --dry-run \
   --alarm-emails-json '["REPLACE_WITH_ALERT_EMAIL"]'
 ```
@@ -63,6 +64,15 @@ Run without `--dry-run` only after reviewing the planned changes. Dry-run mode
 keeps AWS and GitHub write actions as terminal logs. If existing GitHub
 Environment branch policies would be removed, the script prints each obsolete
 policy's branch name and policy ID before the delete step.
+
+`--write-deploy-profile-vars` is opt-in so rerunning bootstrap does not
+accidentally overwrite a reviewed Terraform profile. For a fresh dev account,
+enable it to write the generated backend config and a safe low-cost
+`TFVARS_JSON` profile to the selected GitHub Environment. Add
+`--vpc-id`, `--db-subnet-ids`, `--lambda-subnet-ids`, and optionally
+`--vpc-endpoint-route-table-ids` when the account already has reviewed network
+IDs. Without those network flags, the generated profile stays in a skeleton mode
+that avoids committing account-specific IDs to the repo.
 
 The script creates or updates:
 
@@ -75,6 +85,8 @@ The script creates or updates:
 - GitHub Environment variables:
   - `AWS_DEV_DEPLOY_ROLE_ARN`
   - `OPERATIONAL_ALARM_EMAILS_JSON`
+  - `TF_BACKEND_CONFIG_HCL` when `--write-deploy-profile-vars` is set
+  - `TFVARS_JSON` when `--write-deploy-profile-vars` is set
 
 The deploy role policy is intentionally broad enough for the current dev
 Terraform deployment. Tighten it after the deployment surface stabilizes.
@@ -137,6 +149,11 @@ Confirm these values match the target AWS account:
 - `cognito_callback_urls`
 - `cognito_logout_urls`
 - `cognito_hosted_ui_domain_prefix`
+
+If the real profile is kept out of git, confirm the matching GitHub Environment
+has `TF_BACKEND_CONFIG_HCL` and `TFVARS_JSON` instead. The workflow creates the
+profile files inside the runner from those variables and validates that the
+`environment` field matches `target_env`.
 
 For the first backend-only deployment, keep this value:
 

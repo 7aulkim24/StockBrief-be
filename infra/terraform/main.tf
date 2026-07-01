@@ -22,7 +22,9 @@ locals {
     var.vpc_endpoint_route_table_ids,
     local.lambda_nat_egress_enabled ? [aws_route_table.lambda_nat_egress[0].id] : [],
   ))
-  s3_gateway_endpoint_enabled = local.managed_networking_enabled && var.enable_ingestion_raw_archive && length(local.s3_gateway_endpoint_route_table_ids) > 0
+  s3_gateway_endpoint_enabled = local.managed_networking_enabled && var.enable_ingestion_raw_archive && (
+    length(var.vpc_endpoint_route_table_ids) > 0 || local.lambda_nat_egress_enabled
+  )
 
   effective_lambda_security_group_ids = length(var.lambda_security_group_ids) > 0 ? var.lambda_security_group_ids : (
     local.managed_networking_enabled ? [aws_security_group.lambda[0].id] : []

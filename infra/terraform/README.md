@@ -351,8 +351,8 @@ Lambda functions attached to a VPC do not receive public IP addresses, even
 when their subnet route table has an Internet Gateway route. Real OpenDART and
 Naver ingestion therefore needs an explicit outbound path.
 
-Terraform can create a NAT Gateway path for the Lambda subnets only when all
-three values are supplied:
+Terraform can create the NAT Gateway path for the Lambda subnets in two modes.
+If the target VPC already has a public subnet, supply that subnet:
 
 ```hcl
 enable_lambda_nat_egress    = true
@@ -360,16 +360,24 @@ lambda_nat_public_subnet_id = "subnet-public-for-nat"
 lambda_nat_route_subnet_ids = ["subnet-lambda-a", "subnet-lambda-b"]
 ```
 
-For live ingestion verification, set the values for the target AWS account:
+If the target VPC has no usable public subnet, let Terraform create the public
+subnet, public route table, and route to the VPC Internet Gateway:
 
 ```hcl
-enable_lambda_nat_egress    = true
-lambda_nat_public_subnet_id = "subnet-public-for-nat"
+enable_lambda_nat_egress                  = true
+lambda_nat_create_public_subnet           = true
+lambda_nat_public_subnet_cidr_block       = "10.0.100.0/24"
+lambda_nat_public_subnet_availability_zone = "ap-northeast-2a" # optional
 lambda_nat_route_subnet_ids = [
   "subnet-lambda-private-a",
   "subnet-lambda-private-b",
 ]
 ```
+
+When `lambda_nat_create_public_subnet=true`, Terraform discovers the VPC
+Internet Gateway automatically. If the VPC does not have one, set
+`lambda_nat_create_internet_gateway=true` so Terraform creates and attaches it.
+If discovery is ambiguous, set `lambda_nat_internet_gateway_id` explicitly.
 
 Current dev live ingestion settings:
 
@@ -392,13 +400,14 @@ Terraform-managed NAT route table. After #214 is applied, that NAT Gateway,
 Elastic IP, NAT route table, private subnet route table associations, and the
 extra S3 Gateway endpoint route table attachment are expected to be removed.
 
-The public NAT subnet must keep a route to the VPC Internet Gateway. The route
-subnet IDs are associated with a Terraform-managed private route table whose
-default route points to the NAT Gateway. For the current dev account, choose a
-public subnet that is not in `lambda_nat_route_subnet_ids` so the NAT Gateway
-itself keeps direct Internet Gateway egress. Do not include
-`lambda_nat_public_subnet_id` in `lambda_nat_route_subnet_ids`; Terraform
-preconditions fail the plan when those inputs overlap.
+The public NAT subnet must keep a route to the VPC Internet Gateway. When
+Terraform creates that public subnet, it also creates the public route table and
+subnet association. The route subnet IDs are associated with a
+Terraform-managed private route table whose default route points to the NAT
+Gateway. Do not include the public NAT subnet in
+`lambda_nat_route_subnet_ids`; Terraform preconditions fail the plan when those
+inputs overlap. In existing-public-subnet mode, this means do not include
+`lambda_nat_public_subnet_id` in `lambda_nat_route_subnet_ids`.
 
 When the S3 raw archive Gateway endpoint is enabled, Terraform also attaches
 that endpoint to the managed NAT route table. This keeps Lambda raw archive
@@ -989,7 +998,13 @@ one team member's `target_env` against another team member's AWS account.
 When building `TFVARS_JSON`, keep `amplify_cognito_redirect_uri` empty for the
 console-managed Amplify flow unless Terraform creates Amplify for that
 environment. Keep `agentcore_runtime_container_uri` empty unless
-`agentcore_runtime_enabled` is true and an AgentCore ECR image URI is ready.
+`agentcore_runtime_enabled` is true and an AgentCore ECR image URI is ready. If
+`chat_provider` is `bedrock` or `agentcore` and `lambda_subnet_ids` attaches the
+API Lambda to private subnets, either enable Terraform-managed NAT egress with
+`enable_lambda_nat_egress=true` and reviewed NAT subnet IDs, set
+`lambda_nat_create_public_subnet=true` with a non-overlapping public subnet
+CIDR, or keep the NAT subnet IDs recorded in `TFVARS_JSON` so the existing
+route-table egress can be reviewed before apply.
 
 The workflow builds `dist/stockbrief-api-lambda.zip`, initializes Terraform with
 the selected S3 backend config, plans with the selected tfvars file, and applies

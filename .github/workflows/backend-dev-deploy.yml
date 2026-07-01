@@ -111,6 +111,114 @@ jobs:
                   )
                   sys.exit(1)
 
+              def list_value(name):
+                  value = parsed_tfvars.get(name, [])
+                  return value if isinstance(value, list) else []
+
+              semantic_errors = []
+              chat_provider = parsed_tfvars.get("chat_provider", "mock")
+              agentcore_enabled = bool(parsed_tfvars.get("agentcore_runtime_enabled", False))
+              agentcore_container_uri = str(
+                  parsed_tfvars.get("agentcore_runtime_container_uri", "")
+              ).strip()
+              lambda_subnet_ids = list_value("lambda_subnet_ids")
+              lambda_nat_route_subnet_ids = list_value("lambda_nat_route_subnet_ids")
+              nat_public_subnet_id = str(
+                  parsed_tfvars.get("lambda_nat_public_subnet_id", "")
+              ).strip()
+              nat_create_public_subnet = bool(
+                  parsed_tfvars.get("lambda_nat_create_public_subnet", False)
+              )
+              nat_public_subnet_cidr = str(
+                  parsed_tfvars.get("lambda_nat_public_subnet_cidr_block", "")
+              ).strip()
+              nat_internet_gateway_id = str(
+                  parsed_tfvars.get("lambda_nat_internet_gateway_id", "")
+              ).strip()
+              nat_create_internet_gateway = bool(
+                  parsed_tfvars.get("lambda_nat_create_internet_gateway", False)
+              )
+              live_chat_provider_enabled = chat_provider in {"bedrock", "agentcore"}
+
+              if agentcore_enabled and not agentcore_container_uri:
+                  semantic_errors.append(
+                      "agentcore_runtime_enabled=true requires "
+                      "agentcore_runtime_container_uri."
+                  )
+              if chat_provider == "agentcore" and not agentcore_enabled:
+                  semantic_errors.append(
+                      "chat_provider=agentcore requires agentcore_runtime_enabled=true."
+                  )
+              if chat_provider == "agentcore" and not agentcore_container_uri:
+                  semantic_errors.append(
+                      "chat_provider=agentcore requires a non-empty "
+                      "agentcore_runtime_container_uri."
+                  )
+              if parsed_tfvars.get("agentcore_network_mode", "PUBLIC") == "VPC":
+                  managed_networking = (
+                      bool(parsed_tfvars.get("vpc_id"))
+                      and bool(list_value("db_subnet_ids"))
+                      and bool(lambda_subnet_ids)
+                  )
+                  explicit_security_groups = bool(list_value("lambda_security_group_ids"))
+                  if not managed_networking and not explicit_security_groups:
+                      semantic_errors.append(
+                          "agentcore_network_mode=VPC requires managed networking "
+                          "(vpc_id, db_subnet_ids, lambda_subnet_ids) or "
+                          "lambda_security_group_ids."
+                      )
+              if lambda_subnet_ids and live_chat_provider_enabled:
+                  nat_ready = (
+                      bool(parsed_tfvars.get("enable_lambda_nat_egress", False))
+                      or (
+                          bool(nat_public_subnet_id)
+                          and bool(lambda_nat_route_subnet_ids)
+                      )
+                  )
+                  if not nat_ready:
+                      semantic_errors.append(
+                          "VPC-attached Lambda with chat_provider=bedrock/agentcore "
+                          "requires outbound egress: set enable_lambda_nat_egress=true "
+                          "with lambda_nat_public_subnet_id/lambda_nat_route_subnet_ids, "
+                          "or record reviewed NAT subnet ids when an existing route "
+                          "table already provides egress."
+                      )
+              if parsed_tfvars.get("enable_lambda_nat_egress", False):
+                  if nat_public_subnet_id and nat_create_public_subnet:
+                      semantic_errors.append(
+                          "enable_lambda_nat_egress must use either "
+                          "lambda_nat_public_subnet_id or "
+                          "lambda_nat_create_public_subnet=true, not both."
+                      )
+                  if nat_create_public_subnet and not nat_public_subnet_cidr:
+                      semantic_errors.append(
+                          "lambda_nat_create_public_subnet=true requires "
+                          "lambda_nat_public_subnet_cidr_block."
+                      )
+                  if nat_create_internet_gateway and nat_internet_gateway_id:
+                      semantic_errors.append(
+                          "enable_lambda_nat_egress must use either "
+                          "lambda_nat_internet_gateway_id or "
+                          "lambda_nat_create_internet_gateway=true, not both."
+                      )
+                  if not lambda_nat_route_subnet_ids:
+                      semantic_errors.append(
+                          "enable_lambda_nat_egress=true requires "
+                          "lambda_nat_route_subnet_ids."
+                      )
+                  if not nat_public_subnet_id and not nat_create_public_subnet:
+                      semantic_errors.append(
+                          "enable_lambda_nat_egress=true requires "
+                          "lambda_nat_public_subnet_id or "
+                          "lambda_nat_create_public_subnet=true."
+                      )
+
+              if semantic_errors:
+                  print("TFVARS_JSON failed deploy profile validation:", file=sys.stderr)
+                  for error in semantic_errors:
+                      print(f"- {error}", file=sys.stderr)
+                  sys.exit(1)
+
               os.makedirs(os.path.dirname(tf_backend_path), exist_ok=True)
               os.makedirs(os.path.dirname(tf_var_path), exist_ok=True)
               with open(tf_backend_path, "w", encoding="utf-8") as backend_file:

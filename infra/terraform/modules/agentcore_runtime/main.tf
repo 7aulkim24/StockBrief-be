@@ -10,8 +10,7 @@ locals {
       Subnets        = var.subnet_ids
     }
     } : {
-    NetworkMode       = "PUBLIC"
-    NetworkModeConfig = null
+    NetworkMode = "PUBLIC"
   }
 }
 

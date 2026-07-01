@@ -223,7 +223,7 @@ module "agentcore_runtime" {
   container_uri      = var.agentcore_runtime_container_uri
   network_mode       = var.agentcore_network_mode
   subnet_ids         = var.lambda_subnet_ids
-  security_group_ids = var.lambda_security_group_ids
+  security_group_ids = local.effective_lambda_security_group_ids
   log_retention_days = var.agentcore_runtime_log_retention_days
   bedrock_chat_foundation_model_arns = (
     var.agentcore_runtime_enabled ? local.effective_bedrock_chat_foundation_model_arns : []

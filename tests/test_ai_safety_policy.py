@@ -5,6 +5,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = REPOSITORY_ROOT / "docs" / "engineering" / "AI_SAFETY_POLICY.md"
 PROVIDER_PATH = REPOSITORY_ROOT / "app" / "services" / "chat" / "providers.py"
 PYPROJECT_PATH = REPOSITORY_ROOT / "pyproject.toml"
+UV_LOCK_PATH = REPOSITORY_ROOT / "uv.lock"
+AGENTCORE_DOCKERFILE_PATH = REPOSITORY_ROOT / "Dockerfile.agentcore"
 
 
 def test_bedrock_policy_documents_fail_closed_controls() -> None:
@@ -37,11 +39,17 @@ def test_policy_documents_agentcore_dev_runtime_boundary() -> None:
     assert "Strands Agents SDK remains out of the direct Bedrock provider" in policy
 
 
-def test_provider_factory_explicitly_allows_agentcore_without_strands() -> None:
+def test_provider_factory_explicitly_allows_agentcore_with_locked_strands_extra() -> None:
     provider = PROVIDER_PATH.read_text(encoding="utf-8").casefold()
     pyproject = PYPROJECT_PATH.read_text(encoding="utf-8").casefold()
+    uv_lock = UV_LOCK_PATH.read_text(encoding="utf-8").casefold()
+    dockerfile = AGENTCORE_DOCKERFILE_PATH.read_text(encoding="utf-8").casefold()
 
     assert "strands" not in provider
     assert 'if name == "agentcore":' in provider
     assert '"agent" + "core"' not in provider
-    assert "strands" not in pyproject
+    assert "agentcore = [" in pyproject
+    assert '"strands-agents>=1.0.0,<2.0.0"' in pyproject
+    assert 'name = "strands-agents"' in uv_lock
+    assert "--extra agentcore" in dockerfile
+    assert "requirements-agentcore.txt" not in dockerfile

@@ -255,10 +255,45 @@ variable "enable_lambda_nat_egress" {
   default     = false
 }
 
+variable "lambda_nat_create_public_subnet" {
+  description = "Whether Terraform should create the public subnet and public route table used by the Lambda NAT Gateway."
+  type        = bool
+  default     = false
+}
+
 variable "lambda_nat_public_subnet_id" {
-  description = "Public subnet ID where the NAT Gateway for Lambda provider egress is created. Required only when enable_lambda_nat_egress is true."
+  description = "Existing public subnet ID where the NAT Gateway for Lambda provider egress is created. Leave empty when lambda_nat_create_public_subnet is true."
   type        = string
   default     = ""
+}
+
+variable "lambda_nat_public_subnet_cidr_block" {
+  description = "CIDR block for the Terraform-managed public NAT subnet. Required when lambda_nat_create_public_subnet is true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.lambda_nat_public_subnet_cidr_block == "" || can(cidrhost(var.lambda_nat_public_subnet_cidr_block, 0))
+    error_message = "lambda_nat_public_subnet_cidr_block must be empty or a valid IPv4 CIDR block."
+  }
+}
+
+variable "lambda_nat_public_subnet_availability_zone" {
+  description = "Optional Availability Zone for the Terraform-managed public NAT subnet."
+  type        = string
+  default     = ""
+}
+
+variable "lambda_nat_internet_gateway_id" {
+  description = "Existing Internet Gateway ID for the Terraform-managed public NAT subnet route. Leave empty to discover the VPC Internet Gateway or when lambda_nat_create_internet_gateway is true."
+  type        = string
+  default     = ""
+}
+
+variable "lambda_nat_create_internet_gateway" {
+  description = "Whether Terraform should create and attach an Internet Gateway for the managed public NAT subnet. Keep false when the VPC already has an Internet Gateway."
+  type        = bool
+  default     = false
 }
 
 variable "lambda_nat_route_subnet_ids" {

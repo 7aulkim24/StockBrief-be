@@ -3,9 +3,8 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 WORKDIR /app
 ENV UV_CACHE_DIR=/tmp/uv-cache
 
-COPY pyproject.toml uv.lock requirements-agentcore.txt ./
-RUN uv sync --frozen --no-dev \
-    && uv pip install --python .venv/bin/python -r requirements-agentcore.txt
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --extra agentcore
 
 COPY app ./app
 

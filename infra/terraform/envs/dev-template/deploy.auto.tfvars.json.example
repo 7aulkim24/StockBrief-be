@@ -42,7 +42,12 @@
     "REPLACE_WITH_PRIVATE_ROUTE_TABLE_ID"
   ],
   "enable_lambda_nat_egress": false,
+  "lambda_nat_create_public_subnet": false,
   "lambda_nat_public_subnet_id": "",
+  "lambda_nat_public_subnet_cidr_block": "",
+  "lambda_nat_public_subnet_availability_zone": "",
+  "lambda_nat_internet_gateway_id": "",
+  "lambda_nat_create_internet_gateway": false,
   "lambda_nat_route_subnet_ids": [],
   "agentcore_runtime_enabled": false,
   "agentcore_runtime_container_uri": "",

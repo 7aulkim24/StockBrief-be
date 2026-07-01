@@ -31,6 +31,9 @@ def test_multi_account_dev_profile_templates_are_available() -> None:
     assert template_tfvars["environment"] == "REPLACE_WITH_TARGET_ENV"
     assert template_tfvars["enable_amplify"] is False
     assert template_tfvars["enable_lambda_nat_egress"] is False
+    assert template_tfvars["lambda_nat_create_public_subnet"] is False
+    assert template_tfvars["lambda_nat_public_subnet_cidr_block"] == ""
+    assert template_tfvars["lambda_nat_create_internet_gateway"] is False
     assert template_tfvars["enable_ingestion_scheduler"] is False
     assert template_tfvars["enable_rds_proxy"] is False
     assert template_tfvars["db_deletion_protection"] is False
@@ -239,6 +242,7 @@ def test_api_lambda_role_has_vpc_and_agentcore_invoke_permissions() -> None:
     assert 'count = var.agentcore_runtime_arn == "" ? 0 : 1' not in api_lambda_tf
     assert "agentcore_runtime_invoke_enabled = (" in root_main_tf
     assert 'var.agentcore_runtime_container_uri != ""' in root_main_tf
+    assert "security_group_ids = local.effective_lambda_security_group_ids" in root_main_tf
 
 
 def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
@@ -312,6 +316,21 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     assert deploy_tfvars["bedrock_chat_inference_profile_extra_foundation_model_arns"] == []
 
 
+def test_backend_dev_deploy_validates_semantic_tfvars_json() -> None:
+    workflow = (REPOSITORY_ROOT / ".github/workflows/backend-dev-deploy.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "TFVARS_JSON failed deploy profile validation" in workflow
+    assert "chat_provider=agentcore requires agentcore_runtime_enabled=true" in workflow
+    assert "agentcore_runtime_enabled=true requires" in workflow
+    assert "VPC-attached Lambda with chat_provider=bedrock/agentcore" in workflow
+    assert "lambda_nat_public_subnet_id/lambda_nat_route_subnet_ids" in workflow
+    assert "lambda_nat_create_public_subnet=true requires" in workflow
+    assert "lambda_nat_create_internet_gateway=true, not both" in workflow
+    assert "agentcore_network_mode=VPC requires managed networking" in workflow
+
+
 def test_ingestion_pipeline_resources_are_wired_with_scheduler_disabled_by_default() -> None:
     ingestion_tf = _read("ingestion.tf")
     root_main_tf = _read("main.tf")
@@ -369,9 +388,18 @@ def test_lambda_nat_egress_is_toggleable_and_disabled_by_default() -> None:
     )
 
     assert 'variable "enable_lambda_nat_egress"' in variables_tf
+    assert 'variable "lambda_nat_create_public_subnet"' in variables_tf
     assert 'variable "lambda_nat_public_subnet_id"' in variables_tf
+    assert 'variable "lambda_nat_public_subnet_cidr_block"' in variables_tf
+    assert 'variable "lambda_nat_create_internet_gateway"' in variables_tf
     assert 'variable "lambda_nat_route_subnet_ids"' in variables_tf
     assert "default     = false" in variables_tf
+    assert 'data "aws_internet_gateway" "lambda_nat"' in egress_tf
+    assert "aws_internet_gateway\" \"lambda_nat" in egress_tf
+    assert "aws_subnet\" \"lambda_nat_public" in egress_tf
+    assert "map_public_ip_on_launch = false" in egress_tf
+    assert "aws_route_table\" \"lambda_nat_public" in egress_tf
+    assert "aws_route_table_association\" \"lambda_nat_public" in egress_tf
     assert "aws_nat_gateway\" \"lambda_egress" in egress_tf
     assert "aws_eip\" \"lambda_nat" in egress_tf
     assert "aws_route_table\" \"lambda_nat_egress" in egress_tf
@@ -381,10 +409,15 @@ def test_lambda_nat_egress_is_toggleable_and_disabled_by_default() -> None:
     assert "s3_gateway_endpoint_route_table_ids" in root_main_tf
     assert "aws_route_table.lambda_nat_egress[0].id" in root_main_tf
     assert "local.s3_gateway_endpoint_route_table_ids" in root_main_tf
-    assert "!contains(var.lambda_nat_route_subnet_ids, var.lambda_nat_public_subnet_id)" in egress_tf
+    assert "!contains(var.lambda_nat_route_subnet_ids, local.effective_lambda_nat_public_subnet_id)" in egress_tf
+    assert "var.lambda_nat_public_subnet_id == \"\"" in egress_tf
+    assert "var.lambda_nat_create_internet_gateway && var.lambda_nat_internet_gateway_id != \"\"" in egress_tf
     assert "not included in lambda_nat_route_subnet_ids" in egress_tf
     assert "precondition" in egress_tf
     assert "enable_lambda_nat_egress     = false" in dev_tfvars
+    assert "lambda_nat_create_public_subnet=true" in terraform_readme
+    assert "lambda_nat_public_subnet_cidr_block" in terraform_readme
+    assert "lambda_nat_create_internet_gateway=true" in terraform_readme
     assert "NAT Gateway hourly and data processing costs" in terraform_readme
     assert "Do not include" in terraform_readme
     assert "`lambda_nat_public_subnet_id` in `lambda_nat_route_subnet_ids`" in terraform_readme

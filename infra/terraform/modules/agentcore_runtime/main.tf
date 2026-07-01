@@ -3,16 +3,17 @@ locals {
   runtime_name  = replace("${var.name_prefix}_agent", "-", "_")
   endpoint_name = replace("${var.name_prefix}_default", "-", "_")
 
-  network_configuration = var.network_mode == "VPC" ? {
-    NetworkMode = "VPC"
-    NetworkModeConfig = {
-      SecurityGroups = var.security_group_ids
-      Subnets        = var.subnet_ids
-    }
-    } : {
-    NetworkMode       = "PUBLIC"
-    NetworkModeConfig = null
-  }
+  network_configuration = merge(
+    {
+      NetworkMode = var.network_mode
+    },
+    var.network_mode == "VPC" ? {
+      NetworkModeConfig = {
+        SecurityGroups = var.security_group_ids
+        Subnets        = var.subnet_ids
+      }
+    } : {}
+  )
 }
 
 data "aws_iam_policy_document" "assume_agentcore" {

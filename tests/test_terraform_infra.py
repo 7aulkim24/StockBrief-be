@@ -188,9 +188,15 @@ def test_dev_scheduler_preserves_reviewed_reactivation_inputs_while_paused() -> 
     ]
     assert "reviewed NAT subnet IDs in tfvars" in terraform_readme
     assert "After #214" in terraform_readme
-    assert "reviewed reactivation inputs" in terraform_readme
-    assert "After #214" in ingestion_runbook
-    assert "`enable_ingestion_scheduler` stays `false`" in ingestion_runbook
+    assert "Committed paused-cost template settings" in terraform_readme
+    assert "GitHub Environment `dev` tfvars" in terraform_readme
+    assert "BE #252 and BE #254 intentionally enabled NAT egress" in terraform_readme
+    assert "nat-06de3faa3d9831ce4" in terraform_readme
+    assert "return the GitHub Environment" in terraform_readme
+    assert "deploy-time source of truth" in ingestion_runbook
+    assert "BE #252 and BE #254" in ingestion_runbook
+    assert "Treat the committed job" in ingestion_runbook
+    assert "reactivation inputs" in ingestion_runbook
     assert "check_ingestion_scheduler_enable_gate" in ingestion_runbook
     assert "scheduler reactivation plan evidence for #199/#200" in terraform_readme
     assert "planned 6 scheduler additions" in terraform_readme

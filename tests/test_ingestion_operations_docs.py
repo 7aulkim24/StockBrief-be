@@ -44,9 +44,11 @@ def test_ingestion_operations_runbook_exists_and_covers_manual_smoke() -> None:
     assert "cron(0 18 ? * MON-FRI *)" in runbook
     assert "The current reviewed dev" in runbook
     assert "jobs use `OpenDART` and `NAVER_NEWS`" in runbook
-    assert "After #214" in runbook
-    assert "`enable_ingestion_scheduler` stays `false`" in runbook
-    assert "until" in runbook
+    assert "deploy.auto.tfvars.json` on paused-cost defaults" in runbook
+    assert "GitHub Environment `dev` tfvars" in runbook
+    assert "deploy-time source of truth" in runbook
+    assert "BE #252 and BE #254" in runbook
+    assert "pause NAT egress and scheduler" in runbook
     assert "scheduler gate pass again" in runbook
     assert "The scheduler change is reviewed in a separate PR" in runbook
     assert '"stockbrief_operation":"check_ingestion_scheduler_enable_gate"' in runbook

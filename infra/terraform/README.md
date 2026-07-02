@@ -92,18 +92,15 @@ Environment variables required by `.github/workflows/backend-dev-deploy.yml`.
    For the first backend-only deployment, keep `enable_amplify = false`. Enable
    it only after the target GitHub organization approves the Amplify GitHub App.
    The current dev profile has Amplify enabled for the reviewed hosted FE URL.
-   Keep `enable_ingestion_scheduler = false` until provider API credentials are
-   stored in Secrets Manager, Lambda provider egress is available, and the
-   target ticker/job list is reviewed. After a live provider smoke window ends
-   and NAT egress is turned off, pause the dev scheduler again so EventBridge
-   does not invoke provider jobs that cannot reach OpenDART or NAVER.
-   Keep `enable_lambda_nat_egress = false` until live provider ingestion is
-   approved because NAT Gateway creates hourly and data processing charges.
-   During the live ingestion smoke window, NAT egress is enabled for the Lambda
-   private subnets so `check_provider_egress` and one-ticker provider ingestion
-   can be verified from the deployed runtime. After smoke evidence is collected,
-   turn NAT egress off again before pausing the dev environment unless the
-   reviewed scheduler window still needs live provider access.
+   Keep the committed dev `deploy.auto.tfvars.json` on paused-cost defaults:
+   `enable_ingestion_scheduler = false` and
+   `enable_lambda_nat_egress = false`. GitHub Environment `dev` tfvars are the
+   deploy-time source of truth for `backend-dev-deploy`; the current live
+   ingestion work window intentionally enables NAT egress and scheduler there.
+   After the live provider work window ends, review and apply a cost-pause PR
+   that returns the GitHub Environment values to the paused defaults so
+   EventBridge does not invoke provider jobs that cannot reach OpenDART or
+   NAVER and the NAT Gateway stops incurring hourly charges.
    The committed dev `deploy.auto.tfvars.json` tracks the current 560 account,
    hosted FE callback/logout URLs, and the reviewed provider schedules.
 
@@ -395,7 +392,7 @@ Troubleshooting:
   IGW for the NAT public subnet route. Re-run with one of the two explicit IGW
   settings above.
 
-Current dev live ingestion settings:
+Committed paused-cost template settings:
 
 ```hcl
 enable_lambda_nat_egress    = false
@@ -406,15 +403,23 @@ lambda_nat_route_subnet_ids = [
 ]
 ```
 
-The current dev profile keeps the reviewed NAT subnet IDs in tfvars for the
-next live ingestion window, but #214 pauses NAT egress by default to stop NAT
-Gateway hourly charges while no live provider work is running. The NAT public
-subnet is intentionally not included in `lambda_nat_route_subnet_ids`. A live
-smoke on 2026-06-26 observed `nat-0c302c1bf173385d2` as `available` and the S3
-Gateway endpoint attached to both the original route table and the
-Terraform-managed NAT route table. After #214 is applied, that NAT Gateway,
-Elastic IP, NAT route table, private subnet route table associations, and the
-extra S3 Gateway endpoint route table attachment are expected to be removed.
+The committed dev template keeps the reviewed NAT subnet IDs in tfvars for the
+next live ingestion window, but #214 pauses NAT egress by default in the
+repository template to stop NAT Gateway hourly charges while no live provider
+work is running. The NAT public subnet is intentionally not included in
+`lambda_nat_route_subnet_ids`.
+
+Current live ingestion window:
+
+- GitHub Environment `dev` tfvars, not the committed paused template, are the
+  deploy input for `backend-dev-deploy`.
+- BE #252 and BE #254 intentionally enabled NAT egress and EventBridge
+  Scheduler for the OpenDART/NAVER `005930` work window.
+- The active NAT Gateway observed on 2026-07-02 is
+  `nat-06de3faa3d9831ce4`.
+- When the live provider work window ends, return the GitHub Environment
+  `enable_lambda_nat_egress` and `enable_ingestion_scheduler` values to
+  `false` through a reviewed PR and deploy plan.
 
 The public NAT subnet must keep a route to the VPC Internet Gateway. When
 Terraform creates that public subnet, it also creates the public route table and

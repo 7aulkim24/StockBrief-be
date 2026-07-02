@@ -29,16 +29,17 @@ payloads into PR comments, shared logs, or issue comments.
   terraform output external_api_secret_arn
   ```
 
-- `enable_ingestion_scheduler` matches the reviewed dev tfvars. Keep it `false`
-  while Lambda provider egress is unavailable. When a live provider smoke window
-  needs scheduled runs, enable NAT egress, review the exact provider/ticker
-  schedule, verify `check_ingestion_scheduler_enable_gate`, then apply the
-  scheduler change. After NAT egress is turned off, pause the dev scheduler
-  again so scheduled jobs do not fail on provider network access.
-  The current dev profile keeps the reviewed OpenDART and NAVER scheduler job
-  definitions for ticker `005930`, but #214 pauses `enable_ingestion_scheduler`
-  and `enable_lambda_nat_egress` by default. Treat the job definitions as
-  reactivation inputs, not as permission to run unattended provider calls.
+- Keep the repository `deploy.auto.tfvars.json` on paused-cost defaults:
+  `enable_ingestion_scheduler=false` and `enable_lambda_nat_egress=false`.
+  GitHub Environment `dev` tfvars are the deploy-time source of truth for
+  `backend-dev-deploy`. The current live ingestion work window intentionally
+  enables NAT egress and EventBridge Scheduler there for the reviewed
+  OpenDART/NAVER `005930` jobs from BE #252 and BE #254.
+  After the live provider work window ends, pause NAT egress and scheduler
+  again through a reviewed PR so scheduled jobs do not fail on provider network
+  access and NAT Gateway hourly charges stop. Treat the committed job
+  definitions as reactivation inputs, not as permission to run unattended
+  provider calls outside a reviewed live window.
 - External API credentials are stored in Secrets Manager outside git. Use the
   repository helper so the secret payload is written to a temporary file and
   removed automatically:

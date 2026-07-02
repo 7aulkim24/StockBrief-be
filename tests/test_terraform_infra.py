@@ -211,6 +211,10 @@ def test_agentcore_runtime_module_uses_cloudformation_resources() -> None:
 
     assert "AWS::BedrockAgentCore::Runtime" in agentcore_tf
     assert "AWS::BedrockAgentCore::RuntimeEndpoint" in agentcore_tf
+    assert 'variable = "aws:SourceAccount"' in agentcore_tf
+    assert 'variable = "aws:SourceArn"' in agentcore_tf
+    assert "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:*" in agentcore_tf
+    assert "/aws/bedrock-agentcore/runtimes/${local.runtime_name}" in agentcore_tf
     assert "agentcore_runtime_container_uri" in root_main_tf
     assert "scripts/check_agentcore_runtime_preflight.sh" in terraform_readme
     assert "CloudFormation" in terraform_readme

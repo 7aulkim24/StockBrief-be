@@ -1,6 +1,7 @@
-# Dev Owen Deploy Runbook
+# Dev Profile Deploy Runbook
 
-`dev-owen` GitHub Actions 배포를 안전하게 다시 실행하기 위한 복사/붙여넣기용 절차입니다.
+`dev` 또는 `dev-*` GitHub Actions 배포를 안전하게 다시 실행하기 위한 복사/붙여넣기용 절차입니다.
+개인별 dev profile은 `TARGET_ENV`만 다르게 두고 같은 흐름을 사용합니다.
 
 목표:
 
@@ -12,14 +13,19 @@
 ## 0. 기본값
 
 ```bash
-cd /Users/eskim00/Documents/Programming/KDT_AWS/StockBrief/StockBrief-be
+cd /path/to/StockBrief-be
 
-export TARGET_ENV=dev-owen
-export AWS_REGION=ap-northeast-2
-export REPO=80-hours-a-week/StockBrief-be
+export TARGET_ENV="dev-<name>"
+export AWS_REGION="${AWS_REGION:-ap-northeast-2}"
+export REPO="${REPO:-80-hours-a-week/StockBrief-be}"
 export PREFIX="stockbrief-${TARGET_ENV}"
 export ROLE_NAME="${PREFIX}-github-actions-deploy"
 export POLICY_NAME="${PREFIX}-deploy-access"
+export AWS_ACCOUNT_ID="$(
+  aws sts get-caller-identity \
+    --query Account \
+    --output text
+)"
 ```
 
 ```bash
@@ -27,13 +33,7 @@ gh auth status
 aws sts get-caller-identity
 ```
 
-대상 계정은 현재 `465002806203`입니다.
-
-```bash
-aws sts get-caller-identity --query Account --output text
-```
-
-
+`TARGET_ENV`는 `dev` 또는 `dev-*`만 사용합니다. 다른 사람이 같은 절차를 실행할 때는 자기 profile 이름으로 `TARGET_ENV`만 바꾸고, 아래 조회 명령으로 AWS 리소스 값을 다시 채웁니다.
 
 ## 1. Bootstrap 재실행
 
@@ -48,7 +48,7 @@ scripts/bootstrap_github_oidc.sh \
   --alarm-emails-json '["REPLACE_WITH_ALERT_EMAIL"]'
 ```
 
-`TFVARS_JSON`를 새로 생성/덮어써야 하는 초기 세팅 때만 `--write-deploy-profile-vars`를 붙입니다. 이미 운영 중인 환경에서는 이 옵션이 기존 tfvars를 빈 네트워크 값으로 덮을 수 있으므로 신중히 사용합니다.
+`TF_BACKEND_CONFIG_HCL`/`TFVARS_JSON`를 새로 생성해야 하는 초기 profile 세팅 때만 `--write-deploy-profile-vars`를 붙입니다. 이미 운영 중인 profile에서는 기존 tfvars를 빈 네트워크 값으로 덮을 수 있으므로, 먼저 3~6장을 따라 현재 리소스 값을 확인합니다.
 
 ## 2. 권한 확인
 
@@ -71,6 +71,10 @@ aws iam get-role-policy \
 ```text
 cloudformation:DescribeType
 ecr:DescribeImages
+ec2:CreateSubnet
+ec2:ModifySubnetAttribute
+ec2:CreateNatGateway
+ec2:CreateRoute
 bedrock-agentcore:CreateAgentRuntime
 bedrock-agentcore:CreateAgentRuntimeEndpoint
 bedrock-agentcore:GetAgentRuntime
@@ -91,10 +95,8 @@ aws iam get-role \
 아래 값이 trust policy에 있어야 합니다.
 
 ```text
-repo:80-hours-a-week/StockBrief-be:environment:dev-owen
+repo:80-hours-a-week/StockBrief-be:environment:<TARGET_ENV>
 ```
-
-
 
 ## 3. GitHub Environment 변수 확인
 
@@ -105,33 +107,20 @@ gh variable list --repo "$REPO" --env "$TARGET_ENV"
 필수 변수:
 
 ```text
-AWS_DEV_OWEN_DEPLOY_ROLE_ARN
+AWS_<TARGET_ENV_WITH_DASHES_REPLACED_BY_UNDERSCORES>_DEPLOY_ROLE_ARN
 OPERATIONAL_ALARM_EMAILS_JSON
 TF_BACKEND_CONFIG_HCL
 TFVARS_JSON
 ```
 
 ```bash
-gh variable get AWS_DEV_OWEN_DEPLOY_ROLE_ARN --repo "$REPO" --env "$TARGET_ENV"
-gh variable get OPERATIONAL_ALARM_EMAILS_JSON --repo "$REPO" --env "$TARGET_ENV"
 gh variable get TF_BACKEND_CONFIG_HCL --repo "$REPO" --env "$TARGET_ENV"
 gh variable get TFVARS_JSON --repo "$REPO" --env "$TARGET_ENV" | jq .
 ```
 
-
-
 ## 4. 기존 AWS 리소스 조회
 
-현재 조회된 값:
-
-```bash
-export VPC_ID="vpc-0e5635efa06d86078"
-export DB_SUBNET_IDS_JSON='["subnet-0c9ccda30014e4d65","subnet-0bdeb54b212bc9a9f"]'
-export LAMBDA_SUBNET_IDS_JSON='["subnet-0c9ccda30014e4d65","subnet-0bdeb54b212bc9a9f"]'
-export S3_VPCE_ROUTE_TABLE_IDS_JSON='["rtb-05852d4a8971e7746"]'
-```
-
-다시 조회하려면:
+현재 profile에 이미 배포된 리소스가 있으면 AWS에서 다시 조회합니다.
 
 ```bash
 export VPC_ID="$(
@@ -170,6 +159,15 @@ export S3_VPCE_ROUTE_TABLE_IDS_JSON="$(
 )"
 ```
 
+초기 profile이라 RDS/Lambda가 아직 없으면 위 조회가 실패할 수 있습니다. 그 경우에는 사용할 VPC/subnet/route table을 직접 정해 같은 변수에 JSON으로 넣습니다.
+
+```bash
+export VPC_ID="<existing-vpc-id>"
+export DB_SUBNET_IDS_JSON='["<db-subnet-a>","<db-subnet-b>"]'
+export LAMBDA_SUBNET_IDS_JSON='["<lambda-subnet-a>","<lambda-subnet-b>"]'
+export S3_VPCE_ROUTE_TABLE_IDS_JSON='["<route-table-id>"]'
+```
+
 값 확인:
 
 ```bash
@@ -179,25 +177,13 @@ printf 'LAMBDA_SUBNET_IDS=%s\n' "$LAMBDA_SUBNET_IDS_JSON"
 printf 'S3_VPCE_ROUTE_TABLE_IDS=%s\n' "$S3_VPCE_ROUTE_TABLE_IDS_JSON"
 ```
 
-
-
 ## 5. NAT 선택
-
-현재 조회 결과:
-
-```text
-MANAGED_NAT_PUBLIC_SUBNET_ID=None
-NAT_GATEWAY_PUBLIC_SUBNET_ID=None
-NAT_ROUTE_SUBNET_IDS=null
-```
 
 선택 기준:
 
 - 현재 목적이 `destroy` 방지와 AgentCore PUBLIC 배포 확인이면 NAT 없이 진행해도 됩니다.
 - VPC Lambda가 외부 HTTPS, Cognito JWKS, 외부 API, Bedrock, AgentCore 호출을 안정적으로 해야 하면 NAT를 생성합니다.
 - NAT Gateway는 시간당 비용과 데이터 처리 비용이 발생합니다.
-
-
 
 ## 6A. NAT 없이 TFVARS_JSON 복구
 
@@ -214,7 +200,8 @@ jq \
   --argjson lambda_subnet_ids "$LAMBDA_SUBNET_IDS_JSON" \
   --argjson vpce_route_table_ids "$S3_VPCE_ROUTE_TABLE_IDS_JSON" \
   '
-  .vpc_id = $vpc_id
+  .environment = env.TARGET_ENV
+  | .vpc_id = $vpc_id
   | .db_subnet_ids = $db_subnet_ids
   | .lambda_subnet_ids = $lambda_subnet_ids
   | .vpc_endpoint_route_table_ids = $vpce_route_table_ids
@@ -240,13 +227,11 @@ gh variable set TFVARS_JSON \
   --body "$(cat "/tmp/${TARGET_ENV}.tfvars.after.json")"
 ```
 
-
-
 ## 6B. NAT 생성 포함 TFVARS_JSON 복구
 
 VPC Lambda의 외부 egress가 필요할 때 사용합니다.
 
-먼저 VPC CIDR를 확인하고 겹치지 않는 public subnet CIDR를 정합니다.
+먼저 VPC CIDR와 기존 subnet CIDR를 확인합니다.
 
 ```bash
 aws ec2 describe-vpcs \
@@ -254,14 +239,19 @@ aws ec2 describe-vpcs \
   --region "$AWS_REGION" \
   --query 'Vpcs[0].CidrBlock' \
   --output text
+
+aws ec2 describe-subnets \
+  --region "$AWS_REGION" \
+  --filters "Name=vpc-id,Values=${VPC_ID}" \
+  --query 'Subnets[].{SubnetId:SubnetId,AZ:AvailabilityZone,Cidr:CidrBlock,Name:Tags[?Key==`Name`]|[0].Value}' \
+  --output table
 ```
 
-Public subnet CIDR는 VPC CIDR 안에 있어야 하며, 기존 subnet CIDR와 겹치지 않아야 합니다.
-기존 VPC CIDR가 `172.31.0.0/16`이면 아래처럼 근처의 미사용 CIDR를 사용합니다.
+Public subnet CIDR는 VPC CIDR 안에 있어야 하며, 기존 subnet CIDR와 겹치지 않아야 합니다. 예를 들어 VPC CIDR가 `172.31.0.0/16`이고 기존 subnet이 `172.31.0.0/20`, `172.31.16.0/20`처럼 앞쪽 대역을 쓰고 있다면 근처의 미사용 대역인 `172.31.100.0/24`를 후보로 둘 수 있습니다. 실제 적용 전에는 위 subnet 목록과 겹치지 않는지 확인합니다.
 
 ```bash
 export NAT_PUBLIC_SUBNET_CIDR="172.31.100.0/24"
-export NAT_PUBLIC_SUBNET_AZ="ap-northeast-2a"
+export NAT_PUBLIC_SUBNET_AZ="${AWS_REGION}a"
 ```
 
 기존 VPC에 연결된 Internet Gateway ID도 함께 조회합니다. `lambda_nat_create_public_subnet=true`일 때는 `lambda_nat_create_internet_gateway=true` 또는 `lambda_nat_internet_gateway_id`가 필요합니다.
@@ -292,7 +282,8 @@ jq \
   --arg nat_public_az "$NAT_PUBLIC_SUBNET_AZ" \
   --arg nat_internet_gateway_id "$NAT_INTERNET_GATEWAY_ID" \
   '
-  .vpc_id = $vpc_id
+  .environment = env.TARGET_ENV
+  | .vpc_id = $vpc_id
   | .db_subnet_ids = $db_subnet_ids
   | .lambda_subnet_ids = $lambda_subnet_ids
   | .vpc_endpoint_route_table_ids = $vpce_route_table_ids
@@ -318,23 +309,22 @@ gh variable set TFVARS_JSON \
   --body "$(cat "/tmp/${TARGET_ENV}.tfvars.after.json")"
 ```
 
-
-
 ## 7. AgentCore ECR 확인
 
-`TFVARS_JSON` 기준:
+profile별로 사용할 ECR 이미지 태그를 명시합니다.
 
-```text
-agentcore_runtime_enabled=true
-agentcore_runtime_container_uri=465002806203.dkr.ecr.ap-northeast-2.amazonaws.com/stockbrief-agent:96f431a
+```bash
+export AGENTCORE_ECR_REPOSITORY="${AGENTCORE_ECR_REPOSITORY:-stockbrief-agent}"
+export AGENTCORE_IMAGE_TAG="<image-tag>"
+export AGENTCORE_CONTAINER_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AGENTCORE_ECR_REPOSITORY}:${AGENTCORE_IMAGE_TAG}"
 ```
 
 ECR 이미지 확인:
 
 ```bash
 aws ecr describe-images \
-  --repository-name stockbrief-agent \
-  --image-ids imageTag=96f431a \
+  --repository-name "$AGENTCORE_ECR_REPOSITORY" \
+  --image-ids imageTag="$AGENTCORE_IMAGE_TAG" \
   --region "$AWS_REGION"
 ```
 
@@ -342,11 +332,24 @@ repository가 없으면:
 
 ```bash
 aws ecr create-repository \
-  --repository-name stockbrief-agent \
+  --repository-name "$AGENTCORE_ECR_REPOSITORY" \
   --region "$AWS_REGION"
 ```
 
+런타임을 켤 profile만 `TFVARS_JSON`에 반영합니다.
 
+```bash
+jq \
+  --arg container_uri "$AGENTCORE_CONTAINER_URI" \
+  '
+  .agentcore_runtime_enabled = true
+  | .agentcore_runtime_container_uri = $container_uri
+  | .agentcore_network_mode = "PUBLIC"
+  ' "/tmp/${TARGET_ENV}.tfvars.after.json" > "/tmp/${TARGET_ENV}.tfvars.agentcore.json"
+
+mv "/tmp/${TARGET_ENV}.tfvars.agentcore.json" "/tmp/${TARGET_ENV}.tfvars.after.json"
+jq . "/tmp/${TARGET_ENV}.tfvars.after.json"
+```
 
 ## 8. Preflight
 
@@ -362,9 +365,41 @@ scripts/check_agentcore_runtime_preflight.sh \
   --region "$AWS_REGION"
 ```
 
+## 9. Runtime 실행 역할 정책 확인
 
+Terraform이 만드는 runtime role trust policy에는 AWS 문서 예시처럼 `aws:SourceAccount`와 `aws:SourceArn` 조건이 들어가야 합니다.
 
-## 9. Plan-only 실행
+```bash
+aws iam get-role \
+  --role-name "${PREFIX}-agentcore-runtime-role" \
+  --query 'Role.AssumeRolePolicyDocument.Statement[0].Condition' \
+  --output json | jq .
+```
+
+기대 형태:
+
+```json
+{
+  "StringEquals": {
+    "aws:SourceAccount": "<aws-account-id>"
+  },
+  "ArnLike": {
+    "aws:SourceArn": "arn:aws:bedrock-agentcore:<region>:<aws-account-id>:*"
+  }
+}
+```
+
+실행 역할 inline policy에는 logs, X-Ray, CloudWatch metric, workload token, Bedrock invoke 권한이 있어야 합니다.
+
+```bash
+aws iam get-role-policy \
+  --role-name "${PREFIX}-agentcore-runtime-role" \
+  --policy-name "${PREFIX}-agentcore-runtime" \
+  --query 'PolicyDocument.Statement[].Action' \
+  --output json | jq .
+```
+
+## 10. Plan-only 실행
 
 ```bash
 gh workflow run backend-dev-deploy.yml \
@@ -423,7 +458,7 @@ terraform untaint 'module.agentcore_runtime.aws_cloudformation_stack.runtime[0]'
 
 다시 `apply=false`를 실행해 `0 to destroy`가 확인될 때만 다음 단계로 진행합니다. stack 상태가 `ROLLBACK_*`, `*_FAILED`, `DELETE_*`이면 untaint하지 말고 CloudFormation 이벤트와 AgentCore Runtime 상태를 먼저 확인합니다.
 
-## 10. Apply
+## 11. Apply
 
 plan-only에서 삭제가 없고 생성/수정 내역을 검토한 뒤 실행합니다.
 
@@ -434,9 +469,7 @@ gh workflow run backend-dev-deploy.yml \
   -f apply=true
 ```
 
-
-
-## 11. 배포 후 확인
+## 12. 배포 후 확인
 
 Terraform output 확인:
 
@@ -467,9 +500,7 @@ export API_BASE_URL="<terraform-output-api-base-url>"
 curl -i "${API_BASE_URL}/v1/health"
 ```
 
-
-
-## 12. 실패 시 빠른 판별
+## 13. 실패 시 빠른 판별
 
 권한 문제:
 
@@ -502,7 +533,7 @@ ECR 이미지 문제:
 
 ```bash
 aws ecr describe-images \
-  --repository-name stockbrief-agent \
-  --image-ids imageTag=96f431a \
+  --repository-name "$AGENTCORE_ECR_REPOSITORY" \
+  --image-ids imageTag="$AGENTCORE_IMAGE_TAG" \
   --region "$AWS_REGION"
 ```

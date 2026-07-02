@@ -24,6 +24,18 @@ data "aws_iam_policy_document" "assume_agentcore" {
       type        = "Service"
       identifiers = ["bedrock-agentcore.amazonaws.com"]
     }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [var.account_id]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:*"]
+    }
   }
 }
 
@@ -37,7 +49,7 @@ resource "aws_iam_role" "runtime" {
 resource "aws_cloudwatch_log_group" "runtime" {
   count = local.enabled ? 1 : 0
 
-  name              = "/aws/bedrock-agentcore/${local.runtime_name}"
+  name              = "/aws/bedrock-agentcore/runtimes/${local.runtime_name}"
   retention_in_days = var.log_retention_days
 }
 

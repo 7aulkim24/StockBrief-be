@@ -318,8 +318,12 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     assert "Other teammate" in audit_doc
     assert "완료" in audit_doc
 
+    assert "BE `main` fast-forwarded to `36484f7` after BE #266" in audit_doc
+    assert "FE `main` fast-forwarded to `f0abd0c` after FE #114 merged" in audit_doc
     assert "`GET /v1/health`" in audit_doc
     assert "`GET /v1/recommendations/candidates?limit=3`" in audit_doc
+    assert "scripts/check_recommendation_quality_smoke.py --limit 3 --max-detail-tickers 3" in audit_doc
+    assert "each detail returned 8 score components with weight sum `100`" in audit_doc
     assert "`POST /v1/chat`" in audit_doc
     assert "scripts/check_bedrock_chat_smoke.py" in audit_doc
     assert "scripts/check_hosted_auth_smoke.py --skip-auth-api" in audit_doc
@@ -327,6 +331,9 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     assert "the temporary Cognito smoke user was deleted after the run" in audit_doc
     assert "pnpm run smoke:hosted-evidence --" in audit_doc
     assert "FE #104 originally added this smoke" in audit_doc
+    assert "FE #112 expanded the hosted smoke to include the guest watchlist" in audit_doc
+    assert "`/watchlist`: HTTP 200, watchlist heading and guest localStorage copy present" in audit_doc
+    assert "evidence/watchlist smoke all returned `ok=true`" in audit_doc
     assert "scripts/check_ingestion_smoke.py" in audit_doc
     assert "matched_terms=[]" in audit_doc
     assert "ready_for_manual_ingestion=true" in audit_doc

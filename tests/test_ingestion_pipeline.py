@@ -1105,6 +1105,30 @@ def test_check_ingestion_readiness_loads_external_secret_without_exposing_values
     assert "krx-secret" not in serialized
 
 
+def test_check_ingestion_readiness_scopes_provider_requirements(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.ingestion.load_secret_json",
+        lambda _secret_arn: {
+            "OPENDART_API_KEY": "opendart-secret",
+            "NAVER_CLIENT_ID": "naver-id",
+            "NAVER_CLIENT_SECRET": "naver-secret",
+        },
+    )
+
+    result = check_ingestion_readiness(
+        Settings(
+            EXTERNAL_API_SECRET_ARN="arn:aws:secretsmanager:ap-northeast-2:123:secret:external",
+            INGESTION_RAW_BUCKET="stockbrief-dev-raw",
+        ),
+        providers=[OPENDART_PROVIDER, NAVER_PROVIDER],
+    )
+
+    assert result["ok"] is True
+    assert result["issues"] == []
+    assert set(result["checks"]["providers"]) == {OPENDART_PROVIDER, NAVER_PROVIDER}
+    assert KRX_PROVIDER not in result["checks"]["providers"]
+
+
 def test_check_ingestion_readiness_returns_secret_load_error(monkeypatch) -> None:
     def fail_secret_load(_secret_arn):
         raise RuntimeError("secret unavailable")
@@ -1284,9 +1308,15 @@ def test_check_provider_egress_rejects_unsupported_provider() -> None:
 
 
 def test_check_ingestion_scheduler_enable_gate_blocks_until_all_checks_pass(monkeypatch) -> None:
+    readiness_calls = []
+
+    def fake_readiness(*, providers=None):
+        readiness_calls.append(providers)
+        return {"ok": False, "issues": [{"code": "missing_provider_credential"}]}
+
     monkeypatch.setattr(
         "app.services.ingestion.check_ingestion_readiness",
-        lambda: {"ok": False, "issues": [{"code": "missing_provider_credential"}]},
+        fake_readiness,
     )
     monkeypatch.setattr(
         "app.services.ingestion.check_raw_archive_write",
@@ -1313,6 +1343,7 @@ def test_check_ingestion_scheduler_enable_gate_blocks_until_all_checks_pass(monk
     assert result["scheduler_enable_ready"] is False
     assert result["providers"] == [OPENDART_PROVIDER]
     assert result["tickers"] == ["005930"]
+    assert readiness_calls == [[OPENDART_PROVIDER]]
     assert result["blockers"] == [
         {
             "code": "readiness_not_ready",
@@ -1342,7 +1373,7 @@ def test_check_ingestion_scheduler_enable_gate_requires_successful_manual_smoke(
 ) -> None:
     monkeypatch.setattr(
         "app.services.ingestion.check_ingestion_readiness",
-        lambda: {"ok": True, "issues": []},
+        lambda **_kwargs: {"ok": True, "issues": []},
     )
     monkeypatch.setattr(
         "app.services.ingestion.check_raw_archive_write",
@@ -1389,7 +1420,7 @@ def test_check_ingestion_scheduler_enable_gate_requires_successful_manual_smoke(
 def test_check_ingestion_scheduler_enable_gate_passes_when_all_checks_pass(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.ingestion.check_ingestion_readiness",
-        lambda: {"ok": True, "issues": []},
+        lambda **_kwargs: {"ok": True, "issues": []},
     )
     monkeypatch.setattr(
         "app.services.ingestion.check_raw_archive_write",

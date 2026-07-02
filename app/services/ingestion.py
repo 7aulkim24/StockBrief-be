@@ -689,7 +689,7 @@ def check_ingestion_scheduler_enable_gate(event: dict[str, object] | None = None
     status_limit = _status_limit(request.get("limit"))
     stale_max_age_minutes = _stale_run_max_age_minutes(request.get("max_age_minutes"))
 
-    readiness = check_ingestion_readiness()
+    readiness = check_ingestion_readiness(providers=providers)
     raw_archive = check_raw_archive_write()
     provider_egress = check_provider_egress({"providers": providers})
     status = get_ingestion_status(
@@ -840,9 +840,16 @@ def reconcile_stale_started_runs(
     }
 
 
-def check_ingestion_readiness(settings: Settings | None = None) -> dict[str, Any]:
+def check_ingestion_readiness(
+    settings: Settings | None = None,
+    *,
+    providers: list[str] | None = None,
+) -> dict[str, Any]:
     base_settings = settings or get_settings()
-    issues: list[dict[str, str]] = []
+    selected_providers, provider_selection_issues = _provider_egress_selection(
+        {} if providers is None else {"providers": providers}
+    )
+    issues: list[dict[str, str]] = list(provider_selection_issues)
     secret_load_error: dict[str, str] | None = None
     hydrated_settings = base_settings
 
@@ -875,35 +882,49 @@ def check_ingestion_readiness(settings: Settings | None = None) -> dict[str, Any
                 "field": "INGESTION_RAW_BUCKET",
             }
         )
-    if not hydrated_settings.opendart_api_key:
+    provider_checks = {
+        OPENDART_PROVIDER: {
+            "api_key_configured": bool(hydrated_settings.opendart_api_key),
+        },
+        NAVER_PROVIDER: {
+            "client_id_configured": bool(hydrated_settings.naver_client_id),
+            "client_secret_configured": bool(hydrated_settings.naver_client_secret),
+        },
+        KRX_PROVIDER: {
+            "api_key_configured": bool(hydrated_settings.krx_api_key),
+            "daily_url_configured": bool(hydrated_settings.krx_daily_url),
+        },
+    }
+
+    if OPENDART_PROVIDER in selected_providers and not hydrated_settings.opendart_api_key:
         issues.append(
             {
                 "code": "missing_provider_credential",
                 "field": "OPENDART_API_KEY",
             }
         )
-    if not hydrated_settings.naver_client_id:
+    if NAVER_PROVIDER in selected_providers and not hydrated_settings.naver_client_id:
         issues.append(
             {
                 "code": "missing_provider_credential",
                 "field": "NAVER_CLIENT_ID",
             }
         )
-    if not hydrated_settings.naver_client_secret:
+    if NAVER_PROVIDER in selected_providers and not hydrated_settings.naver_client_secret:
         issues.append(
             {
                 "code": "missing_provider_credential",
                 "field": "NAVER_CLIENT_SECRET",
             }
         )
-    if not hydrated_settings.krx_api_key:
+    if KRX_PROVIDER in selected_providers and not hydrated_settings.krx_api_key:
         issues.append(
             {
                 "code": "missing_provider_credential",
                 "field": "KRX_API_KEY",
             }
         )
-    if not hydrated_settings.krx_daily_url:
+    if KRX_PROVIDER in selected_providers and not hydrated_settings.krx_daily_url:
         issues.append(
             {
                 "code": "missing_provider_endpoint",
@@ -923,17 +944,9 @@ def check_ingestion_readiness(settings: Settings | None = None) -> dict[str, Any
                 "error": secret_load_error,
             },
             "providers": {
-                OPENDART_PROVIDER: {
-                    "api_key_configured": bool(hydrated_settings.opendart_api_key),
-                },
-                NAVER_PROVIDER: {
-                    "client_id_configured": bool(hydrated_settings.naver_client_id),
-                    "client_secret_configured": bool(hydrated_settings.naver_client_secret),
-                },
-                KRX_PROVIDER: {
-                    "api_key_configured": bool(hydrated_settings.krx_api_key),
-                    "daily_url_configured": bool(hydrated_settings.krx_daily_url),
-                },
+                provider: provider_checks[provider]
+                for provider in selected_providers
+                if provider in provider_checks
             },
             "network": {
                 "outbound_internet_egress_verified": False,

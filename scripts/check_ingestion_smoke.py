@@ -118,7 +118,10 @@ def run_smoke(
         "readiness": invoke_operation(
             lambda_client,
             function_name,
-            {"stockbrief_operation": "check_ingestion_readiness"},
+            {
+                "stockbrief_operation": "check_ingestion_readiness",
+                "providers": list(providers),
+            },
         ),
         "raw_archive": invoke_operation(
             lambda_client,

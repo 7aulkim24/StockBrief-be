@@ -32,14 +32,23 @@ def test_maintenance_rejects_unknown_operation() -> None:
 
 
 def test_maintenance_routes_ingestion_readiness_operation(monkeypatch) -> None:
-    def fake_check():
+    calls = []
+
+    def fake_check(*, providers=None):
+        calls.append(providers)
         return {"ok": False, "issues": [{"code": "missing_provider_credential"}]}
 
     monkeypatch.setattr("app.maintenance.check_ingestion_readiness", fake_check)
 
-    result = handle_maintenance_event({"stockbrief_operation": "check_ingestion_readiness"})
+    result = handle_maintenance_event(
+        {
+            "stockbrief_operation": "check_ingestion_readiness",
+            "providers": ["OpenDART", "NAVER_NEWS"],
+        }
+    )
 
     assert result == {"ok": False, "issues": [{"code": "missing_provider_credential"}]}
+    assert calls == [["OpenDART", "NAVER_NEWS"]]
 
 
 def test_maintenance_routes_raw_archive_write_operation(monkeypatch) -> None:

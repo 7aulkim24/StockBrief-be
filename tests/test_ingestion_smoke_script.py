@@ -132,6 +132,10 @@ def test_ingestion_smoke_uses_selected_providers_and_tickers() -> None:
     payloads = [json.loads(call["Payload"].decode("utf-8")) for call in client.calls]
     assert result["ready_for_manual_ingestion"] is True
     assert {
+        "stockbrief_operation": "check_ingestion_readiness",
+        "providers": ["OpenDART", "NAVER_NEWS"],
+    } in payloads
+    assert {
         "stockbrief_operation": "check_provider_egress",
         "providers": ["OpenDART", "NAVER_NEWS"],
     } in payloads

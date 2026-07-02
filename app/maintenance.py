@@ -26,7 +26,9 @@ def handle_maintenance_event(event: dict[str, object]) -> dict[str, object]:
     if operation == "seed_mock_data":
         return seed()
     if operation == "check_ingestion_readiness":
-        return check_ingestion_readiness()
+        return check_ingestion_readiness(
+            providers=_provider_selection(event),
+        )
     if operation == "check_raw_archive_write":
         return check_raw_archive_write()
     if operation == "check_provider_egress":
@@ -58,6 +60,19 @@ def handle_maintenance_event(event: dict[str, object]) -> dict[str, object]:
             "reconcile_stale_ingestion_runs",
         ],
     }
+
+
+def _provider_selection(event: dict[str, object]) -> list[str] | None:
+    if "providers" in event:
+        providers = event["providers"]
+        if isinstance(providers, list):
+            return [str(provider) for provider in providers]
+        if isinstance(providers, str):
+            return [providers]
+    provider = event.get("provider")
+    if isinstance(provider, str) and provider.strip():
+        return [provider]
+    return None
 
 
 def migrate_and_seed() -> dict[str, object]:

@@ -201,10 +201,16 @@ def test_dev_scheduler_preserves_reviewed_reactivation_inputs_while_paused() -> 
 def test_agentcore_runtime_module_uses_cloudformation_resources() -> None:
     agentcore_tf = _read("modules/agentcore_runtime/main.tf")
     root_main_tf = _read("main.tf")
+    terraform_readme = _read("README.md")
 
     assert "AWS::BedrockAgentCore::Runtime" in agentcore_tf
     assert "AWS::BedrockAgentCore::RuntimeEndpoint" in agentcore_tf
     assert "agentcore_runtime_container_uri" in root_main_tf
+    assert "scripts/check_agentcore_runtime_preflight.sh" in terraform_readme
+    assert "CloudFormation" in terraform_readme
+    assert "`AWS::BedrockAgentCore::RuntimeEndpoint`" in terraform_readme
+    assert "create-time control-plane" in terraform_readme
+    assert "AccessDenied" in terraform_readme
 
 
 def test_api_gateway_stage_has_access_logs() -> None:

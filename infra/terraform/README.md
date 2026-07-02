@@ -655,13 +655,24 @@ The module creates an IAM runtime role and a CloudFormation stack containing:
 - `AWS::BedrockAgentCore::Runtime`
 - `AWS::BedrockAgentCore::RuntimeEndpoint`
 
-The API Lambda role receives `bedrock-agentcore:InvokeAgentRuntime` only when the runtime ARN exists. Before applying, run the AgentCore preflight checks:
+The API Lambda role receives `bedrock-agentcore:InvokeAgentRuntime` only when
+the runtime ARN exists. `backend-dev-deploy` runs the repository preflight before
+Terraform init:
 
 ```bash
-agentcore validate
-agentcore deploy --dry-run
-agentcore deploy --diff
+scripts/check_agentcore_runtime_preflight.sh \
+  --terraform-dir infra/terraform \
+  --var-file envs/<target-env>/deploy.auto.tfvars.json \
+  --region ap-northeast-2
 ```
+
+The preflight is a no-op when `agentcore_runtime_enabled=false`. When it is
+enabled, the check confirms that the deploy role can read the CloudFormation
+resource types `AWS::BedrockAgentCore::Runtime` and
+`AWS::BedrockAgentCore::RuntimeEndpoint` in the target region. It does not create
+AgentCore resources and it does not prove every create-time control-plane
+permission; an apply-time `AWS::BedrockAgentCore::Runtime` AccessDenied still
+requires account/region AgentCore readiness and deploy role permission review.
 
 ## Direct Bedrock Chat Provider
 

@@ -57,6 +57,13 @@ jobs:
           TF_BACKEND_CONFIG: ${{ steps.deploy-profile.outputs.tf_backend_config }}
         run: scripts/verify_deploy_account_matches_backend.sh
 
+      - name: Check AgentCore Runtime readiness
+        run: >-
+          scripts/check_agentcore_runtime_preflight.sh
+          --terraform-dir "${{ env.TF_DIR }}"
+          --var-file "${{ steps.deploy-profile.outputs.tf_var_file }}"
+          --region "${{ env.AWS_REGION }}"
+
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
 

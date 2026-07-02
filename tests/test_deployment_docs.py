@@ -214,6 +214,10 @@ def test_backend_dev_deploy_checks_assumed_account_matches_backend() -> None:
     assert "envs/{target_env}/deploy.auto.tfvars.json" in resolver_script
     assert "TF_BACKEND_CONFIG: ${{ steps.deploy-profile.outputs.tf_backend_config }}" in workflow
     assert "scripts/verify_deploy_account_matches_backend.sh" in workflow
+    assert "Check AgentCore Runtime readiness" in workflow
+    assert "scripts/check_agentcore_runtime_preflight.sh" in workflow
+    assert "AgentCore Runtime readiness before Terraform init" in deployment_doc
+    assert "`AWS::BedrockAgentCore::RuntimeEndpoint`" in deployment_doc
     assert "Before Terraform init, `backend-dev-deploy` compares the account" in deployment_doc
     assert "cannot accidentally deploy against a backend that" in deployment_doc
     assert "During account transition work, this failure is the expected guardrail" in deployment_doc
@@ -1038,6 +1042,8 @@ def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
     assert "`ec2:CreateSubnet`" in deployment_doc
     assert "`ec2:DeleteSubnet`" in deployment_doc
     assert "`ec2:AttachInternetGateway`" in deployment_doc
+    assert "scripts/check_agentcore_runtime_preflight.sh" in deployment_doc
+    assert "does not create AgentCore resources" in deployment_doc
     assert "`AWS::BedrockAgentCore::Runtime` AccessDenied" in deployment_doc
     assert "`logs:CreateLogDelivery`" in deployment_doc
     assert "`logs:PutResourcePolicy`" in deployment_doc

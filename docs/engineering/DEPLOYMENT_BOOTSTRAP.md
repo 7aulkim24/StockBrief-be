@@ -174,14 +174,19 @@ API Gateway, Cognito, Secrets Manager, and alarms are managed by Terraform.
 3. The workflow runs in the GitHub Environment named after `target_env`.
 4. The workflow assumes `AWS_<TARGET_ENV>_DEPLOY_ROLE_ARN` through OIDC. The
    legacy `AWS_DEV_DEPLOY_ROLE_ARN` fallback is allowed only for `target_env=dev`.
-5. The workflow packages Lambda, initializes Terraform with
+5. The workflow verifies AgentCore Runtime readiness before Terraform init. It
+   skips when `agentcore_runtime_enabled=false`; when enabled, it checks that the
+   deploy role can read the `AWS::BedrockAgentCore::Runtime` and
+   `AWS::BedrockAgentCore::RuntimeEndpoint` CloudFormation resource types in the
+   target region.
+6. The workflow packages Lambda, initializes Terraform with
    `backends/<target_env>.hcl`, plans with
    `envs/<target_env>/deploy.auto.tfvars.json`, and applies the selected stack
    for pushes to `main`.
    If those profile files are not committed, the workflow creates them at
    runtime from the selected GitHub Environment variables
    `TF_BACKEND_CONFIG_HCL` and `TFVARS_JSON`.
-6. Update Secrets Manager values outside git when keys or DB connection values
+7. Update Secrets Manager values outside git when keys or DB connection values
    change.
 
 Manual workflow dispatch defaults to plan-only validation with `apply=false`.
@@ -535,9 +540,13 @@ the workflow fails with `AccessDenied`, inspect the denied action and resource
 before widening the wildcard fallback. Prefer adding a narrow
 `stockbrief-<environment>-*` ARN statement when the AWS service supports it.
 For `AWS::BedrockAgentCore::Runtime` AccessDenied failures, do not treat EC2 NAT
-permission changes as sufficient evidence. Confirm the target account and region
-can create AgentCore Runtime resources, then handle any required AgentCore
-control-plane permission separately from the NAT networking unblock.
+permission changes as sufficient evidence. First run
+`scripts/check_agentcore_runtime_preflight.sh` against the selected deploy
+profile. Passing this check proves only that the CloudFormation resource types
+are readable in the target region; it does not create AgentCore resources or
+prove every create-time control-plane permission. Confirm the target account and
+region can create AgentCore Runtime resources, then handle any required
+AgentCore control-plane permission separately from the NAT networking unblock.
 For policy edits, also validate the generated IAM policy with AWS Access
 Analyzer and resolve `ERROR` findings before applying it to the deploy role.
 After PR #164 merges, record on #52 that the bootstrap rerun updated the live

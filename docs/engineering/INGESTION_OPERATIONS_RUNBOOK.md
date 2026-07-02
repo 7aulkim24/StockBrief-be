@@ -32,12 +32,11 @@ payloads into PR comments, shared logs, or issue comments.
 - Keep the repository `deploy.auto.tfvars.json` on paused-cost defaults:
   `enable_ingestion_scheduler=false` and `enable_lambda_nat_egress=false`.
   GitHub Environment `dev` tfvars are the deploy-time source of truth for
-  `backend-dev-deploy`. The current live ingestion work window intentionally
-  enables NAT egress and EventBridge Scheduler there for the reviewed
-  OpenDART/NAVER `005930` jobs from BE #252 and BE #254.
-  After the live provider work window ends, pause NAT egress and scheduler
-  again through a reviewed PR so scheduled jobs do not fail on provider network
-  access and NAT Gateway hourly charges stop. Treat the committed job
+  `backend-dev-deploy`. BE #252 and BE #254 intentionally enabled NAT egress and
+  EventBridge Scheduler there for the reviewed OpenDART/NAVER `005930` jobs.
+  #275 paused GitHub Environment `dev` again with
+  `enable_ingestion_scheduler=false` and `enable_lambda_nat_egress=false`, then
+  applied `backend-dev-deploy` run `28574501920`. Treat the committed job
   definitions as reactivation inputs, not as permission to run unattended
   provider calls outside a reviewed live window.
 - External API credentials are stored in Secrets Manager outside git. Use the
@@ -56,12 +55,14 @@ payloads into PR comments, shared logs, or issue comments.
 - Lambda has outbound internet egress for OpenDART and NAVER. Verify it from the
   Lambda runtime after the readiness check:
 
-  NAT may be enabled only during the live ingestion smoke window. When it is
-  enabled, `lambda_nat_public_subnet_id` must point at a public subnet with an
-  Internet Gateway route, and `lambda_nat_route_subnet_ids` must point at the
-  Lambda private subnets in `infra/terraform/envs/dev/deploy.auto.tfvars.json`.
-  The NAT public subnet must not be included in the route subnet list. Turn NAT
-  off again before pausing the dev environment if no live provider work remains.
+  NAT may be enabled only during the live ingestion smoke window. The current
+  dev cost-pause state has the former NAT Gateway `nat-06de3faa3d9831ce4`
+  deleted and its Elastic IP allocation released. When NAT is enabled again,
+  `lambda_nat_public_subnet_id` must point at a public subnet with an Internet
+  Gateway route, and `lambda_nat_route_subnet_ids` must point at the Lambda
+  private subnets in `infra/terraform/envs/dev/deploy.auto.tfvars.json`. The NAT
+  public subnet must not be included in the route subnet list. Turn NAT off
+  again before pausing the dev environment if no live provider work remains.
   When the S3 raw archive Gateway endpoint is enabled, the managed NAT route
   table is also attached to that endpoint so raw archive writes continue through
   the Gateway endpoint after the Lambda subnet route table association changes.

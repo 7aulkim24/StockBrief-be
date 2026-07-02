@@ -48,7 +48,9 @@ def test_ingestion_operations_runbook_exists_and_covers_manual_smoke() -> None:
     assert "GitHub Environment `dev` tfvars" in runbook
     assert "deploy-time source of truth" in runbook
     assert "BE #252 and BE #254" in runbook
-    assert "pause NAT egress and scheduler" in runbook
+    assert "#275 paused GitHub Environment `dev`" in runbook
+    assert "backend-dev-deploy` run `28574501920`" in runbook
+    assert "former NAT Gateway `nat-06de3faa3d9831ce4`" in runbook
     assert "scheduler gate pass again" in runbook
     assert "The scheduler change is reviewed in a separate PR" in runbook
     assert '"stockbrief_operation":"check_ingestion_scheduler_enable_gate"' in runbook

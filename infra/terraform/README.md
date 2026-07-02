@@ -95,12 +95,11 @@ Environment variables required by `.github/workflows/backend-dev-deploy.yml`.
    Keep the committed dev `deploy.auto.tfvars.json` on paused-cost defaults:
    `enable_ingestion_scheduler = false` and
    `enable_lambda_nat_egress = false`. GitHub Environment `dev` tfvars are the
-   deploy-time source of truth for `backend-dev-deploy`; the current live
-   ingestion work window intentionally enables NAT egress and scheduler there.
-   After the live provider work window ends, review and apply a cost-pause PR
-   that returns the GitHub Environment values to the paused defaults so
-   EventBridge does not invoke provider jobs that cannot reach OpenDART or
-   NAVER and the NAT Gateway stops incurring hourly charges.
+   deploy-time source of truth for `backend-dev-deploy`. During the reviewed
+   live ingestion work window, those Environment tfvars intentionally enabled
+   NAT egress and scheduler. After #275, GitHub Environment `dev` is back on the
+   paused defaults so EventBridge does not invoke unattended provider jobs and
+   the NAT Gateway is no longer billable.
    The committed dev `deploy.auto.tfvars.json` tracks the current 560 account,
    hosted FE callback/logout URLs, and the reviewed provider schedules.
 
@@ -409,17 +408,21 @@ repository template to stop NAT Gateway hourly charges while no live provider
 work is running. The NAT public subnet is intentionally not included in
 `lambda_nat_route_subnet_ids`.
 
-Current live ingestion window:
+Current ingestion cost state:
 
 - GitHub Environment `dev` tfvars, not the committed paused template, are the
   deploy input for `backend-dev-deploy`.
 - BE #252 and BE #254 intentionally enabled NAT egress and EventBridge
   Scheduler for the OpenDART/NAVER `005930` work window.
-- The active NAT Gateway observed on 2026-07-02 is
-  `nat-06de3faa3d9831ce4`.
-- When the live provider work window ends, return the GitHub Environment
-  `enable_lambda_nat_egress` and `enable_ingestion_scheduler` values to
-  `false` through a reviewed PR and deploy plan.
+- #275 returned GitHub Environment `dev` `enable_lambda_nat_egress` and
+  `enable_ingestion_scheduler` to `false`.
+- `backend-dev-deploy` run `28574501920` applied the pause on 2026-07-02.
+- The former NAT Gateway `nat-06de3faa3d9831ce4` is `deleted`, its Elastic IP
+  allocation `eipalloc-099e616e0e7f6d2a1` is no longer found, and the
+  `stockbrief-dev-provider-ingestion-*` schedules are absent.
+- Keep the reviewed job definitions and NAT subnet IDs as reactivation inputs
+  only; do not set either toggle back to `true` without a new reviewed live
+  provider work window.
 
 The public NAT subnet must keep a route to the VPC Internet Gateway. When
 Terraform creates that public subnet, it also creates the public route table and

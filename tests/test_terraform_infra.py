@@ -192,7 +192,11 @@ def test_dev_scheduler_preserves_reviewed_reactivation_inputs_while_paused() -> 
     assert "GitHub Environment `dev` tfvars" in terraform_readme
     assert "BE #252 and BE #254 intentionally enabled NAT egress" in terraform_readme
     assert "nat-06de3faa3d9831ce4" in terraform_readme
-    assert "return the GitHub Environment" in terraform_readme
+    assert "#275 returned GitHub Environment `dev`" in terraform_readme
+    assert "backend-dev-deploy` run `28574501920`" in terraform_readme
+    assert "Elastic IP" in terraform_readme
+    assert "eipalloc-099e616e0e7f6d2a1" in terraform_readme
+    assert "no longer found" in terraform_readme
     assert "deploy-time source of truth" in ingestion_runbook
     assert "BE #252 and BE #254" in ingestion_runbook
     assert "Treat the committed job" in ingestion_runbook
@@ -480,7 +484,8 @@ def test_dev_live_provider_nat_egress_uses_non_overlapping_subnets() -> None:
     assert "enable_lambda_nat_egress" in terraform_readme
     assert "lambda_nat_public_subnet_id" in terraform_readme
     assert "lambda_nat_route_subnet_ids" in terraform_readme
-    assert "The NAT public subnet must" in runbook
+    assert "public subnet" in runbook
+    assert "must not be included in the route subnet list" in runbook
     assert "raw archive writes continue through" in runbook
 
 

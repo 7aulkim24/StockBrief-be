@@ -552,6 +552,10 @@ lifecycle actions `ec2:CreateInternetGateway`, `ec2:AttachInternetGateway`,
 `ec2:DetachInternetGateway`, and `ec2:DeleteInternetGateway`. Keep these EC2
 networking actions in the wildcard fallback until the Terraform-managed NAT
 path is replaced by pre-existing reviewed subnet and IGW IDs.
+Disabling Terraform-managed NAT egress also destroys the NAT Elastic IP, and the
+provider may call `ec2:DisassociateAddress` before `ec2:ReleaseAddress`. Keep
+that action in the fallback statement with the other EC2 networking destroy
+paths.
 
 PR #164 covers only the apply blocker found after the new dev account
 transition. It does not close #52 by itself. The `logs:TagResource` addition
@@ -573,6 +577,10 @@ attributes/route table state before it can safely plan. Terraform apply and
 rollback paths for the raw archive must also be able to remove S3 bucket public
 access block, encryption, and lifecycle configuration when those managed
 resources are disabled or destroyed.
+When EventBridge Scheduler is disabled, Terraform deletes the scheduler invoke
+role and first calls `iam:ListInstanceProfilesForRole`; keep that read action in
+the prefix-scoped IAM role statement so the delete path does not fail after the
+schedules have already been removed.
 
 After changing Terraform-managed service permissions, re-run:
 

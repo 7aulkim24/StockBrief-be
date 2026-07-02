@@ -198,8 +198,12 @@ def test_cloud_completion_audit_documents_current_terraform_drift_classification
     assert "GitHub Environment `dev` variables are the source of truth" in audit
     assert "Plan: 0 to add, 2 to change, 0 to destroy" in audit
     assert "backend-dev-deploy` run `28561585744`" in audit
+    assert "backend-dev-deploy` run `28574501920`" in audit
     assert "0 to add, 5 to change, 0 to destroy" in audit
-    assert "superseded for the current live ingestion window by BE #252 and BE #254" in audit
+    assert "BE #252 and BE #254" in audit
+    assert "temporarily superseded it for the live provider window" in audit
+    assert "#275 returned the" in audit
+    assert "deploy-time Environment values to the pause-first baseline" in audit
     assert "Do not apply a" in audit
     assert "plan blindly" in audit
     assert "NAT/scheduler cost posture decided in #214" in audit
@@ -318,14 +322,13 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     ).read_text(encoding="utf-8")
 
     assert "# Cloud Dev Completion Audit" in audit_doc
-    assert "Linked issues: `#211`, `#226`, `#253`, `#255`" in audit_doc
+    assert "Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`" in audit_doc
     assert "FE-to-BE integration" in audit_doc
     assert "toolchain migration" in audit_doc
     assert "Other teammate" in audit_doc
     assert "완료" in audit_doc
 
-    assert "BE `main` fast-forwarded to `36484f7` after BE #266" in audit_doc
-    assert "FE `main` fast-forwarded to `f0abd0c` after FE #114 merged" in audit_doc
+    assert "BE `main` fast-forwarded to `06e2e02`" in audit_doc
     assert "`GET /v1/health`" in audit_doc
     assert "`GET /v1/recommendations/candidates?limit=3`" in audit_doc
     assert "scripts/check_recommendation_quality_smoke.py --limit 3 --max-detail-tickers 3" in audit_doc
@@ -344,17 +347,20 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     assert "matched_terms=[]" in audit_doc
     assert "ready_for_manual_ingestion=true" in audit_doc
     assert "scheduler_enable_ready=true" in audit_doc
-    assert "EventBridge Scheduler has" in audit_doc
+    assert "aws scheduler list-schedules --name-prefix stockbrief-dev-provider-ingestion" in audit_doc
     assert "ApproximateNumberOfMessages=0" in audit_doc or "DLQ visible messages: `0`" in audit_doc
 
     assert "NAT Gateway" in audit_doc
-    assert "enable_lambda_nat_egress=true" in audit_doc
+    assert "enable_lambda_nat_egress=false" in audit_doc
+    assert "enable_ingestion_scheduler=false" in audit_doc
     assert "backend-dev-deploy` run `28561585744`" in audit_doc
+    assert "backend-dev-deploy` run `28574501920`" in audit_doc
     assert "Do not apply a" in audit_doc
     assert "plan blindly" in audit_doc
     assert "NAT/scheduler cost posture decided in #214" in audit_doc
-    assert "OpenDART scheduler: `ENABLED`" in audit_doc
-    assert "NAT Gateway: `nat-06de3faa3d9831ce4`, state `available`" in audit_doc
+    assert "EventBridge Scheduler prefix `stockbrief-dev-provider-ingestion`: empty list" in audit_doc
+    assert "NAT Gateway: `nat-06de3faa3d9831ce4`, state `deleted`" in audit_doc
+    assert "EIP allocation `eipalloc-099e616e0e7f6d2a1`: `InvalidAllocationID.NotFound`" in audit_doc
     assert "AgentCore Runtime is disabled" in audit_doc
 
 
@@ -776,7 +782,7 @@ def test_dev_cost_pause_decision_is_documented() -> None:
     assert "paused by default" in deployment_doc
     assert "hourly charges" in terraform_readme
     assert "reactivation inputs" in audit_doc
-    assert "current live ingestion window" in audit_doc
+    assert "After #214 and #275, the default cost posture is pause-first" in audit_doc
     assert "remaining Amplify, Cognito, RDS, and Lambda package hash" in audit_doc
 
 
@@ -933,6 +939,9 @@ def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
     assert _statement_resources(deploy_policy, "DeployIamRolesByPrefix") == {
         "arn:aws:iam::${account_id}:role/${resource_name_prefix}-*"
     }
+    assert "iam:ListInstanceProfilesForRole" in _statement_actions(
+        deploy_policy, "DeployIamRolesByPrefix"
+    )
     assert _statement_actions(deploy_policy, "DeployPassRolesByPrefix") == {
         "iam:PassRole"
     }
@@ -1030,6 +1039,7 @@ def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
         "ec2:DeleteSubnet",
         "ec2:DetachInternetGateway",
         "ec2:AllocateAddress",
+        "ec2:DisassociateAddress",
         "ec2:DescribeAddressesAttribute",
         "ec2:CreateRouteTable",
         "ec2:AssociateRouteTable",
@@ -1070,6 +1080,8 @@ def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
     assert "`ec2:CreateSubnet`" in deployment_doc
     assert "`ec2:DeleteSubnet`" in deployment_doc
     assert "`ec2:AttachInternetGateway`" in deployment_doc
+    assert "`ec2:DisassociateAddress`" in deployment_doc
+    assert "`iam:ListInstanceProfilesForRole`" in deployment_doc
     assert "scripts/check_agentcore_runtime_preflight.sh" in deployment_doc
     assert "does not create AgentCore resources" in deployment_doc
     assert "`AWS::BedrockAgentCore::Runtime` AccessDenied" in deployment_doc

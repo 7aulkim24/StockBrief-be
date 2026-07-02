@@ -7,7 +7,7 @@ implementation because those were owned by other teammates.
 Audit date: 2026-07-02
 AWS account: `560271561793`
 Region: `ap-northeast-2`
-Linked issues: `#211`, `#226`, `#253`, `#255`
+Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`
 
 Do not paste API keys, access tokens, secret values, raw provider payloads, raw
 model answers, user emails, watchlist item bodies, or chat titles into PR
@@ -28,9 +28,9 @@ evidence. Use the redacted helper outputs and summarize only status fields.
 
 | Category | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Latest main baseline | 완료 | BE `main` fast-forwarded to `36484f7` after BE #266; FE `main` fast-forwarded to `f0abd0c` after FE #114 merged. | Start all new work from latest `main`. |
+| Latest main baseline | 완료 | BE `main` fast-forwarded to `06e2e02` after BE #274 and the dev-owen deploy role policy merge; FE `main` remains an external integration surface. | Start all new BE work from latest `main`. |
 | Deploy profile source | 완료 | BE #252 made GitHub Environment `TFVARS_JSON` and `TF_BACKEND_CONFIG_HCL` the source of truth for `backend-dev-deploy`. | Keep runner-rendered tfvars/backend files out of the repository. |
-| Terraform apply | 완료 | `backend-dev-deploy` run `28560982229` applied NAT/scheduler resources; run `28561585744` deployed the #254 Lambda package. | Inspect the push deploy run after every merge to `main`. |
+| Terraform apply | 완료 | `backend-dev-deploy` run `28560982229` applied NAT/scheduler resources for the live window; run `28561585744` deployed the #254 Lambda package; run `28574501920` applied the #275 cost pause. | Inspect the deploy run after every merge or Environment tfvars change. |
 | API Gateway and Lambda API | 완료 | `GET /v1/health` returned `status=ok`, `service=stockbrief-api`, `environment=dev`. | Continue using deployed smoke before release or after resume. |
 | Recommendation API | 완료 | `GET /v1/recommendations/candidates?limit=3` returned `count=3`, first ticker `005930`, evidence level `medium`, evidence count `42`. | Re-run deployed API smoke after recommendation, ingestion, or Lambda deploy changes. |
 | Recommendation quality | 완료 | `scripts/check_recommendation_quality_smoke.py --limit 3 --max-detail-tickers 3` returned `ok=true`; selected tickers `005930`, `207940`, `000660`; each detail returned 8 score components with weight sum `100`; blockers `[]`. | Re-run before product-flow work that changes candidate quality or evidence joins. |
@@ -42,10 +42,10 @@ evidence. Use the redacted helper outputs and summarize only status fields.
 | Bedrock direct provider | 완료 | `scripts/check_bedrock_chat_smoke.py` returned `ok=true`, model `apac.amazon.nova-micro-v1:0`, `matched_terms=[]`. | Keep AgentCore Runtime out of this phase. |
 | Deployed chat explanation | 완료 | `POST /v1/chat` returned `success=true`, answer present, `data.safety.policy_action=ALLOW`, `data.citations` count `2`. | Re-run after Lambda, IAM, or Bedrock config changes. |
 | Live ingestion readiness | 완료 | Post-#254 `scripts/check_ingestion_smoke.py` returned `ok=true`, `ready_for_manual_ingestion=true`, `scheduler_enable_ready=true`, blockers `[]`. | Manual provider ingest is not re-run in this audit to avoid unnecessary provider calls. |
-| Ingestion scheduler | 완료 | EventBridge Scheduler has `stockbrief-dev-provider-ingestion-opendart` and `stockbrief-dev-provider-ingestion-naver-news` in `ENABLED` state, both `cron(0 18 ? * MON-FRI *)` in `Asia/Seoul`. | Keep enabled only while live provider ingestion development is active. |
+| Ingestion scheduler | 완료 | After #275, `aws scheduler list-schedules --name-prefix stockbrief-dev-provider-ingestion` returned an empty list. | Keep disabled until the next reviewed live provider ingestion window. |
 | Ingestion ledger and evidence | 완료 | Status snapshot showed `started=0`, `succeeded=10`, `failed=0`, latest evidence count `10`. | Investigate only if future runs show stale `started` rows or failures. |
 | DLQ | 완료 | SQS attributes showed visible `0`, not-visible `0`, delayed `0`. | Check after every scheduler or manual ingestion smoke. |
-| NAT and scheduler cost state | 활성 | NAT Gateway `nat-06de3faa3d9831ce4` is `available`; scheduler jobs are `ENABLED`. This is a cost-bearing live ingestion window. | When live ingestion work pauses, review and apply a cost-pause PR that disables NAT and scheduler through GitHub Environment tfvars. |
+| NAT and scheduler cost state | 완료 | GitHub Environment `dev` has `enable_lambda_nat_egress=false` and `enable_ingestion_scheduler=false`; NAT Gateway `nat-06de3faa3d9831ce4` is `deleted`; EIP allocation `eipalloc-099e616e0e7f6d2a1` is not found; scheduler jobs are absent. | Re-enable only through a reviewed live ingestion window. |
 | AgentCore Runtime | 완료 | `agentcore_runtime_enabled=false`; Terraform outputs for AgentCore runtime ARN and endpoint are empty. | Keep disabled until direct Bedrock is stable and a runtime need is proven. |
 
 ## Redacted Smoke Evidence
@@ -66,6 +66,14 @@ BE #252 and #254 are the current deployment boundary:
   - `Apply complete! Resources: 0 added, 2 changed, 0 destroyed.`
   - Updated `stockbrief-dev-api` Lambda package with the provider-scoped
     ingestion scheduler gate from BE #254.
+- `backend-dev-deploy` run `28574501920` on `main`
+  - Triggered with GitHub Environment `dev` `enable_lambda_nat_egress=false`
+    and `enable_ingestion_scheduler=false`.
+  - Terraform apply succeeded after the deploy role policy was updated with
+    `ec2:DisassociateAddress` and `iam:ListInstanceProfilesForRole`.
+  - Completed the #275 cost pause after the earlier run `28574284317` had
+    already destroyed scheduler jobs, route associations, and the NAT Gateway
+    but failed on the final EIP/IAM cleanup permissions.
 
 ### API Smoke
 
@@ -165,14 +173,15 @@ aws ec2 describe-nat-gateways \
   --query 'NatGateways[].{NatGatewayId:NatGatewayId,State:State,SubnetId:SubnetId}'
 
 AWS_PROFILE=stockbrief-dev \
-aws scheduler get-schedule \
-  --name stockbrief-dev-provider-ingestion-opendart \
+aws scheduler list-schedules \
+  --name-prefix stockbrief-dev-provider-ingestion \
+  --query 'Schedules[].{Name:Name,State:State}' \
   --region ap-northeast-2
 
 AWS_PROFILE=stockbrief-dev \
-aws scheduler get-schedule \
-  --name stockbrief-dev-provider-ingestion-naver-news \
-  --region ap-northeast-2
+aws ec2 describe-addresses \
+  --region ap-northeast-2 \
+  --allocation-ids eipalloc-099e616e0e7f6d2a1
 ```
 
 Evidence captured on 2026-07-02:
@@ -180,9 +189,11 @@ Evidence captured on 2026-07-02:
 - DLQ visible messages: `0`
 - DLQ not-visible messages: `0`
 - DLQ delayed messages: `0`
-- NAT Gateway: `nat-06de3faa3d9831ce4`, state `available`
-- OpenDART scheduler: `ENABLED`, `cron(0 18 ? * MON-FRI *)`, `Asia/Seoul`
-- NAVER_NEWS scheduler: `ENABLED`, `cron(0 18 ? * MON-FRI *)`, `Asia/Seoul`
+- GitHub Environment `dev`: `enable_lambda_nat_egress=false`,
+  `enable_ingestion_scheduler=false`
+- NAT Gateway: `nat-06de3faa3d9831ce4`, state `deleted`
+- EIP allocation `eipalloc-099e616e0e7f6d2a1`: `InvalidAllocationID.NotFound`
+- EventBridge Scheduler prefix `stockbrief-dev-provider-ingestion`: empty list
 
 ### Recommendation Quality Smoke
 
@@ -290,25 +301,27 @@ Current deploy behavior:
   local paused-cost template. It is not the deploy source when GitHub Environment
   `TFVARS_JSON` is present.
 - The current GitHub Environment tfvars keep:
-  - `enable_lambda_nat_egress=true`
-  - `enable_ingestion_scheduler=true`
+  - `enable_lambda_nat_egress=false`
+  - `enable_ingestion_scheduler=false`
   - OpenDART and NAVER_NEWS scheduler jobs for ticker `005930`
-- `backend-dev-deploy` run `28561585744` applied the current state successfully.
+- `backend-dev-deploy` run `28574501920` applied the current cost-pause state
+  successfully.
 
 Terraform drift classification is now tied to the deploy profile source being
-reviewed first. In this live ingestion window, the GitHub Environment tfvars
-are the reviewed deploy input, not the paused-cost repository template.
+reviewed first. The GitHub Environment tfvars are the reviewed deploy input, not
+the paused-cost repository template, so inspect that Environment value before
+classifying a plan.
 
 Before any infrastructure apply, inspect the deploy run plan. Do not apply a
 plan blindly. Any create, destroy, or cost-sensitive in-place change must be
 classified in the PR body before merge.
 
 Historical note: the 2026-06-29 #221 follow-up recorded a paused-cost local
-baseline with `0 to add, 5 to change, 0 to destroy`. That baseline is
-superseded for the current live ingestion window by BE #252 and BE #254.
+baseline with `0 to add, 5 to change, 0 to destroy`. BE #252 and BE #254
+temporarily superseded it for the live provider window; #275 returned the
+deploy-time Environment values to the pause-first baseline.
 
-After #214, the default cost posture remains pause-first even though the current
-window is intentionally active.
+After #214 and #275, the default cost posture is pause-first.
 
 NAT/scheduler cost posture decided in #214 still applies as the default rule:
 
@@ -324,12 +337,12 @@ NAT/scheduler cost posture decided in #214 still applies as the default rule:
 
 ## Cost And Resume Decision
 
-Current cost-sensitive state after BE #252 and BE #254:
+Current cost-sensitive state after #275:
 
 - RDS is running and available.
-- NAT Gateway `nat-06de3faa3d9831ce4` is running and incurs hourly and data
-  processing charges.
-- EventBridge Scheduler jobs for OpenDART and NAVER_NEWS are enabled.
+- NAT Gateway `nat-06de3faa3d9831ce4` is deleted.
+- Elastic IP allocation `eipalloc-099e616e0e7f6d2a1` is released.
+- EventBridge Scheduler jobs for OpenDART and NAVER_NEWS are absent.
 - RDS Proxy is disabled.
 - AgentCore Runtime is disabled.
 

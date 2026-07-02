@@ -178,16 +178,13 @@ def test_cloud_completion_audit_documents_current_terraform_drift_classification
     ).read_text(encoding="utf-8")
 
     assert "Terraform drift classification" in audit
+    assert "GitHub Environment `dev` variables are the source of truth" in audit
+    assert "Plan: 0 to add, 2 to change, 0 to destroy" in audit
+    assert "backend-dev-deploy` run `28561585744`" in audit
     assert "0 to add, 5 to change, 0 to destroy" in audit
-    assert "No NAT Gateway, EventBridge Scheduler, SNS topic" in audit
-    assert "Amplify app in-place update" in audit
-    assert "Amplify branch in-place update" in audit
-    assert "Cognito web client in-place update" in audit
-    assert "RDS instance in-place update" in audit
-    assert "Lambda function in-place update" in audit
-    assert "Expected package artifact drift" in audit
-    assert "Do not apply this plan as-is or as a blind repair step" in audit
-    assert "This #221 follow-up records the current reviewed Terraform drift baseline" in audit
+    assert "superseded for the current live ingestion window by BE #252 and BE #254" in audit
+    assert "Do not apply a" in audit
+    assert "plan blindly" in audit
     assert "NAT/scheduler cost posture decided in #214" in audit
 
 
@@ -304,7 +301,7 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     ).read_text(encoding="utf-8")
 
     assert "# Cloud Dev Completion Audit" in audit_doc
-    assert "Linked issues: `#211`, `#226`" in audit_doc
+    assert "Linked issues: `#211`, `#226`, `#253`, `#255`" in audit_doc
     assert "FE-to-BE integration" in audit_doc
     assert "toolchain migration" in audit_doc
     assert "Other teammate" in audit_doc
@@ -317,24 +314,23 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     assert "scripts/check_hosted_auth_smoke.py --skip-auth-api" in audit_doc
     assert "BE #225 captured a full hosted auth API smoke" in audit_doc
     assert "the temporary Cognito smoke user was deleted after the run" in audit_doc
-    assert "pnpm run smoke:hosted-evidence -- --ticker 005930" in audit_doc
-    assert "FE #104 merged the hosted live evidence visibility smoke" in audit_doc
+    assert "pnpm run smoke:hosted-evidence --" in audit_doc
+    assert "FE #104 originally added this smoke" in audit_doc
     assert "scripts/check_ingestion_smoke.py" in audit_doc
     assert "matched_terms=[]" in audit_doc
     assert "ready_for_manual_ingestion=true" in audit_doc
     assert "scheduler_enable_ready=true" in audit_doc
-    assert "Current AWS checks returned no provider ingestion schedules" in audit_doc
+    assert "EventBridge Scheduler has" in audit_doc
     assert "ApproximateNumberOfMessages=0" in audit_doc or "DLQ visible messages: `0`" in audit_doc
 
     assert "NAT Gateway" in audit_doc
-    assert "enable_lambda_nat_egress=false" in audit_doc
-    assert "terraform plan -var-file=envs/dev/deploy.auto.tfvars.json -detailed-exitcode" in audit_doc
-    assert "Do not apply this plan as-is" in audit_doc
-    assert "This #221 follow-up records the current reviewed Terraform drift baseline" in audit_doc
+    assert "enable_lambda_nat_egress=true" in audit_doc
+    assert "backend-dev-deploy` run `28561585744`" in audit_doc
+    assert "Do not apply a" in audit_doc
+    assert "plan blindly" in audit_doc
     assert "NAT/scheduler cost posture decided in #214" in audit_doc
-    assert "provider ingestion schedules: `[]`" in audit_doc
-    assert "Terraform-managed NAT Gateways: `[]`" in audit_doc
-    assert "operational_alarm_email_addresses" in audit_doc
+    assert "OpenDART scheduler: `ENABLED`" in audit_doc
+    assert "NAT Gateway: `nat-06de3faa3d9831ce4`, state `available`" in audit_doc
     assert "AgentCore Runtime is disabled" in audit_doc
 
 
@@ -756,6 +752,7 @@ def test_dev_cost_pause_decision_is_documented() -> None:
     assert "paused by default" in deployment_doc
     assert "hourly charges" in terraform_readme
     assert "reactivation inputs" in audit_doc
+    assert "current live ingestion window" in audit_doc
     assert "remaining Amplify, Cognito, RDS, and Lambda package hash" in audit_doc
 
 

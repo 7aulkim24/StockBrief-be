@@ -320,17 +320,26 @@ def test_backend_dev_deploy_validates_semantic_tfvars_json() -> None:
     workflow = (REPOSITORY_ROOT / ".github/workflows/backend-dev-deploy.yml").read_text(
         encoding="utf-8"
     )
+    validate_script = (REPOSITORY_ROOT / "scripts/validate_tfvars.py").read_text(
+        encoding="utf-8"
+    )
+    resolver_script = (
+        REPOSITORY_ROOT / "scripts/resolve_backend_deploy_profile.py"
+    ).read_text(encoding="utf-8")
 
-    assert "TFVARS_JSON failed deploy profile validation" in workflow
-    assert "chat_provider=agentcore requires agentcore_runtime_enabled=true" in workflow
-    assert "agentcore_runtime_enabled=true requires" in workflow
-    assert "VPC-attached Lambda with chat_provider=bedrock/agentcore" in workflow
-    assert "lambda_nat_public_subnet_id/lambda_nat_route_subnet_ids" in workflow
-    assert "lambda_nat_create_public_subnet=true requires" in workflow
-    assert "lambda_nat_internet_gateway_id in backend-dev-deploy" in workflow
-    assert "no matching Internet Gateway found" in workflow
-    assert "lambda_nat_create_internet_gateway=true, not both" in workflow
-    assert "agentcore_network_mode=VPC requires managed networking" in workflow
+    assert "python scripts/resolve_backend_deploy_profile.py" in workflow
+    assert "from validate_tfvars import" in resolver_script
+    assert "TFVARS_JSON failed deploy profile validation" in validate_script
+    assert "chat_provider=agentcore requires agentcore_runtime_enabled=true" in validate_script
+    assert "agentcore_runtime_enabled=true requires" in validate_script
+    assert "VPC-attached Lambda with chat_provider=bedrock/agentcore" in validate_script
+    assert "lambda_nat_public_subnet_id/lambda_nat_route_subnet_ids" in validate_script
+    assert "lambda_nat_create_public_subnet=true requires" in validate_script
+    assert "lambda_nat_internet_gateway_id in backend-dev-deploy" in validate_script
+    assert "no matching Internet Gateway found" in validate_script
+    assert "lambda_nat_create_internet_gateway=true, not both" in validate_script
+    assert "agentcore_network_mode=VPC requires managed networking" in validate_script
+    assert "scripts/check_dev_terraform_plan.sh remains responsible" in validate_script
 
 
 def test_ingestion_pipeline_resources_are_wired_with_scheduler_disabled_by_default() -> None:

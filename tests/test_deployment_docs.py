@@ -72,7 +72,7 @@ def test_lambda_packaging_script_installs_locked_export(tmp_path) -> None:
     uv_stub.write_text(
         "\n".join(
             [
-                f"#!{sys.executable}",
+                "#!/usr/bin/env python3",
                 "import os",
                 "import pathlib",
                 "import sys",
@@ -195,6 +195,9 @@ def test_backend_dev_deploy_checks_assumed_account_matches_backend() -> None:
     workflow = (
         REPOSITORY_ROOT / ".github/workflows/backend-dev-deploy.yml"
     ).read_text(encoding="utf-8")
+    resolver_script = (
+        REPOSITORY_ROOT / "scripts/resolve_backend_deploy_profile.py"
+    ).read_text(encoding="utf-8")
     deployment_doc = (
         REPOSITORY_ROOT / "docs/engineering/DEPLOYMENT_BOOTSTRAP.md"
     ).read_text(encoding="utf-8")
@@ -207,8 +210,8 @@ def test_backend_dev_deploy_checks_assumed_account_matches_backend() -> None:
     assert "Skip Terraform apply" in workflow
     assert "Plan-only validation completed" in workflow
     assert 'TARGET_ENV: ${{ github.event.inputs.target_env || \'dev\' }}' in workflow
-    assert "backends/{target_env}.hcl" in workflow
-    assert "envs/{target_env}/deploy.auto.tfvars.json" in workflow
+    assert "backends/{target_env}.hcl" in resolver_script
+    assert "envs/{target_env}/deploy.auto.tfvars.json" in resolver_script
     assert "TF_BACKEND_CONFIG: ${{ steps.deploy-profile.outputs.tf_backend_config }}" in workflow
     assert "scripts/verify_deploy_account_matches_backend.sh" in workflow
     assert "Before Terraform init, `backend-dev-deploy` compares the account" in deployment_doc
@@ -223,21 +226,28 @@ def test_backend_dev_deploy_supports_target_environment_profiles() -> None:
     workflow = (
         REPOSITORY_ROOT / ".github/workflows/backend-dev-deploy.yml"
     ).read_text(encoding="utf-8")
+    resolver_script = (
+        REPOSITORY_ROOT / "scripts/resolve_backend_deploy_profile.py"
+    ).read_text(encoding="utf-8")
+    validate_script = (REPOSITORY_ROOT / "scripts/validate_tfvars.py").read_text(
+        encoding="utf-8"
+    )
     bootstrap_doc = (
         REPOSITORY_ROOT / "docs/engineering/NEW_AWS_BOOTSTRAP.md"
     ).read_text(encoding="utf-8")
 
     assert "Resolve deploy profile" in workflow
-    assert 'target_env != "dev" and not target_env.startswith("dev-")' in workflow
-    assert "backend-dev-deploy only accepts dev or dev-* target_env values" in workflow
-    assert "AWS_{target_env.upper().replace('-', '_')}_DEPLOY_ROLE_ARN" in workflow
-    assert 'variables.get("TF_BACKEND_CONFIG_HCL")' in workflow
-    assert 'variables.get("TFVARS_JSON")' in workflow
-    assert "TFVARS_JSON environment must match target_env" in workflow
-    assert 'json.dump(parsed_tfvars, tfvars_file, ensure_ascii=False, indent=2)' in workflow
-    assert "Missing deploy profile file(s):" in workflow
-    assert 'os.path.join(os.environ["TF_DIR"], tf_var_file)' in workflow
-    assert 'os.path.join(os.environ["TF_DIR"], tf_backend_config)' in workflow
+    assert "python scripts/resolve_backend_deploy_profile.py" in workflow
+    assert 'target_env != "dev" and not target_env.startswith("dev-")' in resolver_script
+    assert "backend-dev-deploy only accepts dev or dev-* target_env values" in resolver_script
+    assert "AWS_{target_env.upper().replace('-', '_')}_DEPLOY_ROLE_ARN" in resolver_script
+    assert 'variables.get("TF_BACKEND_CONFIG_HCL")' in resolver_script
+    assert 'variables.get("TFVARS_JSON")' in resolver_script
+    assert "TFVARS_JSON environment must match target_env" in validate_script
+    assert 'json.dump(parsed_tfvars, tfvars_file, ensure_ascii=False, indent=2)' in resolver_script
+    assert "Missing deploy profile file(s):" in resolver_script
+    assert 'os.path.join(os.environ["TF_DIR"], tf_var_file)' in resolver_script
+    assert 'os.path.join(os.environ["TF_DIR"], tf_backend_config)' in resolver_script
     assert 'terraform init' in workflow
     assert '-backend-config="${{ steps.deploy-profile.outputs.tf_backend_config }}"' in workflow
     assert '-var-file="${{ steps.deploy-profile.outputs.tf_var_file }}"' in workflow
@@ -485,7 +495,7 @@ def test_dev_terraform_plan_guard_passes_alarm_emails_to_terraform(
     terraform_stub.write_text(
         "\n".join(
             [
-                f"#!{sys.executable}",
+                "#!/usr/bin/env python3",
                 "import os",
                 "import pathlib",
                 "import sys",

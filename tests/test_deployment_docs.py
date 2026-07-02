@@ -994,6 +994,7 @@ def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
         "kms:DescribeKey",
         "kms:GetKeyPolicy",
         "kms:GetKeyRotationStatus",
+        "cloudformation:DescribeType",
         "apigateway:*",
         "ec2:AttachInternetGateway",
         "ec2:CreateInternetGateway",
@@ -1032,6 +1033,8 @@ def test_github_deploy_role_policy_scopes_prefix_named_resources() -> None:
     assert "deploy role" in deployment_doc
     assert "stockbrief-<environment>-*" in deployment_doc
     assert "wildcard fallback statement" in deployment_doc
+    assert "`cloudformation:DescribeType`" in deployment_doc
+    assert "`AWS::BedrockAgentCore::*`" in deployment_doc
     assert "API Gateway stage creation" in deployment_doc
     assert "Access Analyzer reports" in deployment_doc
     assert "`apigateway:TagResource`" in deployment_doc

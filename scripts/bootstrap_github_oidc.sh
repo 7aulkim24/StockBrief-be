@@ -583,6 +583,7 @@ cat >"${tmpdir}/deploy-policy.json" <<POLICY
         "amplify:UpdateBranch",
         "cloudformation:CreateStack",
         "cloudformation:DeleteStack",
+        "cloudformation:DescribeType",
         "cloudformation:DescribeStackEvents",
         "cloudformation:DescribeStacks",
         "cloudformation:GetTemplate",

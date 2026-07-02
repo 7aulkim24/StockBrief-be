@@ -483,6 +483,9 @@ creation or not consistently supported by the AWS API. This currently includes
 API Gateway, Amplify, CloudFormation, Cognito, EC2 networking, KMS, RDS,
 CloudWatch alarm reads, log group creation/listing, API Gateway access log
 delivery registration, SNS subscription cleanup, and STS caller identity.
+AgentCore Runtime preflight also calls `cloudformation:DescribeType` before
+Terraform init so the deploy role can verify the `AWS::BedrockAgentCore::*`
+CloudFormation resource types without attempting a stack create.
 API Gateway stage creation can fail with an `apigateway:TagResource`
 AccessDenied error when Terraform applies tags to the `$default` stage, but
 Access Analyzer reports `apigateway:TagResource` and

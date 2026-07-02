@@ -224,6 +224,8 @@ def test_backend_dev_deploy_checks_assumed_account_matches_backend() -> None:
     assert "not as a deployment regression" in deployment_doc
     assert "Manual workflow dispatch defaults to plan-only validation" in deployment_doc
     assert "`apply=true` only after reviewing the plan" in deployment_doc
+    assert "source of truth" in deployment_doc
+    assert "Checked-in profile\nfiles are used only" in deployment_doc
 
 
 def test_backend_dev_deploy_supports_target_environment_profiles() -> None:

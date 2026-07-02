@@ -43,15 +43,16 @@ def main() -> int:
     tf_var_path = os.path.join(os.environ["TF_DIR"], tf_var_file)
     tf_backend_path = os.path.join(os.environ["TF_DIR"], tf_backend_config)
 
-    if not os.path.isfile(tf_backend_path) or not os.path.isfile(tf_var_path):
-        backend_config_hcl = variables.get("TF_BACKEND_CONFIG_HCL")
-        tfvars_json = variables.get("TFVARS_JSON")
+    backend_config_hcl = variables.get("TF_BACKEND_CONFIG_HCL")
+    tfvars_json = variables.get("TFVARS_JSON")
+    has_github_profile = "TF_BACKEND_CONFIG_HCL" in variables or "TFVARS_JSON" in variables
+
+    if has_github_profile:
         if not backend_config_hcl or not tfvars_json:
             return _fail(
-                "Missing deploy profile file(s), and GitHub Environment variables "
-                "TF_BACKEND_CONFIG_HCL/TFVARS_JSON are not both set."
+                "GitHub Environment deploy profile variables must be set together: "
+                "TF_BACKEND_CONFIG_HCL and TFVARS_JSON."
             )
-
         if "bucket" not in backend_config_hcl or "key" not in backend_config_hcl:
             return _fail("TF_BACKEND_CONFIG_HCL must include Terraform backend bucket and key.")
 
@@ -67,6 +68,11 @@ def main() -> int:
         with open(tf_var_path, "w", encoding="utf-8") as tfvars_file:
             json.dump(parsed_tfvars, tfvars_file, ensure_ascii=False, indent=2)
             tfvars_file.write("\n")
+    elif not os.path.isfile(tf_backend_path) or not os.path.isfile(tf_var_path):
+        return _fail(
+            "Missing deploy profile file(s), and GitHub Environment variables "
+            "TF_BACKEND_CONFIG_HCL/TFVARS_JSON are not both set."
+        )
 
     required_files = [
         tf_var_path,

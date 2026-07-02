@@ -164,3 +164,53 @@ def test_resolver_writes_profile_files_and_github_outputs(tmp_path) -> None:
         (tf_dir / "envs/dev-owen/deploy.auto.tfvars.json").read_text(encoding="utf-8")
     ) == tfvars
     assert "state-bucket" in (tf_dir / "backends/dev-owen.hcl").read_text(encoding="utf-8")
+
+
+def test_resolver_prefers_github_profile_over_existing_files(tmp_path) -> None:
+    tf_dir = tmp_path / "infra" / "terraform"
+    tfvars_path = tf_dir / "envs/dev/deploy.auto.tfvars.json"
+    backend_path = tf_dir / "backends/dev.hcl"
+    tfvars_path.parent.mkdir(parents=True)
+    backend_path.parent.mkdir(parents=True)
+    tfvars_path.write_text(
+        json.dumps({**_tfvars(environment="dev"), "enable_lambda_nat_egress": False}),
+        encoding="utf-8",
+    )
+    backend_path.write_text(
+        'bucket = "repo-state-bucket"\nkey = "repo/dev/terraform.tfstate"\n',
+        encoding="utf-8",
+    )
+
+    github_tfvars = {
+        **_tfvars(environment="dev"),
+        "vpc_id": "vpc-123",
+        "db_subnet_ids": ["subnet-a", "subnet-b"],
+        "lambda_subnet_ids": ["subnet-a", "subnet-b"],
+        "enable_lambda_nat_egress": True,
+        "lambda_nat_public_subnet_id": "subnet-public",
+        "lambda_nat_route_subnet_ids": ["subnet-a", "subnet-b"],
+    }
+    variables = {
+        "AWS_DEV_DEPLOY_ROLE_ARN": "arn:aws:iam::123456789012:role/deploy",
+        "TF_BACKEND_CONFIG_HCL": 'bucket = "github-state-bucket"\nkey = "github/dev/terraform.tfstate"\n',
+        "TFVARS_JSON": json.dumps(github_tfvars),
+    }
+    env = {
+        **os.environ,
+        "TARGET_ENV": "dev",
+        "TF_DIR": str(tf_dir),
+        "GITHUB_VARIABLES_JSON": json.dumps(variables),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+
+    result = subprocess.run(
+        [sys.executable, "scripts/resolve_backend_deploy_profile.py"],
+        capture_output=True,
+        check=False,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert json.loads(tfvars_path.read_text(encoding="utf-8"))["enable_lambda_nat_egress"] is True
+    assert "github-state-bucket" in backend_path.read_text(encoding="utf-8")

@@ -154,6 +154,10 @@ If the real profile is kept out of git, confirm the matching GitHub Environment
 has `TF_BACKEND_CONFIG_HCL` and `TFVARS_JSON` instead. The workflow creates the
 profile files inside the runner from those variables and validates that the
 `environment` field matches `target_env`.
+When those GitHub Environment variables are present, they are the deploy profile
+source of truth. The workflow rewrites the runner-local backend and tfvars files
+from them even if checked-in profile files already exist. Checked-in profile
+files are used only when the GitHub Environment profile variables are absent.
 
 For the first backend-only deployment, keep this value:
 

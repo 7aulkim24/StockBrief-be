@@ -13,10 +13,11 @@ A deployed candidate flow is healthy when all checks pass:
 
 | Area | Required Signal | Why It Matters |
 | --- | --- | --- |
-| Candidate list | `/v1/stocks/candidates` returns at least one item. | The FE home and explore views have data to render. |
+| Candidate list | `/v1/recommendations/candidates` returns at least one item. | The FE home and explore views have data to render from the canonical recommendation contract. |
 | Evidence count | Each listed item has at least two public evidence records. | A candidate should not be shown from a single weak signal. |
-| Freshness | Candidate list items include `evidence_summary.latest_at`; detail includes `data_freshness.as_of`. | Users need to know the data basis. |
-| Detail contract | `/v1/stocks/candidates/{ticker}` includes `evidence_level`, `evidence_count`, `missing_data`, `risk_tags`, and `recommendation_reasons`. | FE detail and AI explanation need the same source of truth. |
+| Freshness | Candidate list items include `data_freshness.live_evidence_latest_at` or legacy `evidence_summary.latest_at`; detail includes `data_freshness.as_of`. | Users need to know the data basis. |
+| Score components | Detail includes the 8 fixed score components and component weights sum to 100. | The FE score breakdown and score-agent contract must stay aligned. |
+| Detail contract | `/v1/recommendations/candidates/{ticker}` includes `evidence_level`, `evidence_count`, `score_components`, `missing_data`, `risk_tags`, and `recommendation_reasons`. | FE detail and AI explanation need the same source of truth. |
 | Risk context | Detail has at least one risk tag. | A candidate without risk context is incomplete. |
 | Evidence source | `/v1/stocks/{ticker}/evidence` returns source type and source name for every item. Public provider evidence also includes URL and published timestamp; internal score evidence includes `metadata.source_identifier` and `metadata.as_of_date`. | Users must be able to inspect or trace the basis. |
 
@@ -43,14 +44,15 @@ contracts.
 
 The script calls:
 
-- `GET /v1/stocks/candidates`
-- `GET /v1/stocks/candidates/{ticker}` for each selected ticker
+- `GET /v1/recommendations/candidates`
+- `GET /v1/recommendations/candidates/{ticker}` for each selected ticker
 - `GET /v1/stocks/{ticker}/evidence` for each selected ticker
 
 The output is redacted by design. It reports counts, basis dates, source type
-coverage, provider URL/date coverage, internal score source identifier coverage,
-and structured blocker codes. It does not print raw provider bodies, full news
-text, user tokens, or private account data.
+coverage, score component count/weight coverage, provider URL/date coverage,
+internal score source identifier coverage, and structured blocker codes. It
+does not print raw provider bodies, full news text, user tokens, or private
+account data.
 
 ## Interpreting Failures
 
@@ -64,6 +66,10 @@ text, user tokens, or private account data.
 | `missing_data_not_array` | Detail contract no longer returns `missing_data` as an array. | Check API response model and serializer. |
 | `missing_data_freshness_as_of` | Detail has no basis date. | Check score freshness fields. |
 | `missing_recommendation_reasons` | Detail cannot explain why the candidate appears. | Check reason generation and evidence linkage. |
+| `score_component_count_mismatch` | Detail does not expose all 8 fixed score components. | Check score materialization and API serialization. |
+| `score_components_missing` | One or more expected score components are absent. | Check score engine output and persisted component names. |
+| `score_component_weight_mismatch` | A component weight no longer matches the score contract. | Check `SCORE_ENGINE.md` and score serialization. |
+| `score_component_weight_sum_mismatch` | Component weights do not sum to 100. | Check score engine output and migrated score rows. |
 | `evidence_items_below_minimum` | Evidence tab has too few records. | Check `/v1/stocks/{ticker}/evidence`. |
 | `evidence_item_not_object` | Evidence response contains a malformed item. | Check API response serialization. |
 | `evidence_item_missing_source_metadata` | A specific evidence item lacks required source metadata. Public provider evidence requires `source_type`, `source_name`, `url`, and `published_at`; internal score evidence requires `source_type`, `source_name`, `metadata.source_identifier`, and `metadata.as_of_date`. | Check source document normalization, provider date parsing, or internal score evidence metadata. |
@@ -77,6 +83,7 @@ Recommendation quality smoke:
 - candidate list: pass, count=<n>, first_ticker=<ticker>
 - selected_tickers=<ticker_a>,<ticker_b>,<ticker_c>
 - candidate detail: pass for selected tickers, evidence_count>=<n>, risk_tag_count>=1
+- score components: component_count=8, component_weight_sum=100
 - stock evidence: pass for selected tickers, evidence_count>=<n>, source_types=<types>
 - provider evidence: url_coverage=<n>/<n>, published_at_coverage=<n>/<n>
 - internal score evidence: source_identifier_coverage=<n>/<n>, as_of_date_coverage=<n>/<n>

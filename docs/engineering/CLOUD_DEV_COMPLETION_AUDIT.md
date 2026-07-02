@@ -188,17 +188,25 @@ Evidence captured on 2026-07-02:
 
 ```bash
 STOCKBRIEF_API_BASE_URL="https://hazfha7995.execute-api.ap-northeast-2.amazonaws.com" \
-uv run python scripts/check_recommendation_quality_smoke.py --ticker 005930
+uv run python scripts/check_recommendation_quality_smoke.py \
+  --limit 3 \
+  --max-detail-tickers 3
 ```
 
 Evidence captured on 2026-07-02:
 
 - `ok=true`
-- candidate list: count `3`, first ticker `005930`, as-of `2026-06-09`
-- candidate detail: evidence level `medium`, evidence count `42`, risk tag
-  count `1`, missing data count `0`, reason count `1`
-- stock evidence: evidence count `20`, source types `NEWS`, URL/source/date
-  coverage present for all returned items
+- candidate list: target `/recommendations/candidates?limit=3`, count `3`,
+  first ticker `005930`, selected tickers `005930`, `207940`, `000660`, as-of
+  `2026-06-09`
+- candidate detail: targets `/recommendations/candidates/{ticker}`, evidence
+  level `medium`, evidence counts `42`, `2`, and `22`, risk tag count `1`,
+  missing data count `0`, reason count `1`
+- score components: all selected details returned component count `8` and
+  component weight sum `100`
+- stock evidence: targets `/stocks/{ticker}/evidence`; source metadata coverage
+  passed for selected tickers, including internal `SCORE` evidence metadata for
+  `207940`
 - `blockers=[]`
 
 ### Hosted Auth Smoke

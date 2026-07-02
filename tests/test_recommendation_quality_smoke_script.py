@@ -37,31 +37,29 @@ class FakeFetcher:
 
     def __call__(self, url: str, timeout_seconds: float):
         self.calls.append((url, timeout_seconds))
-        if "/stocks/candidates?" in url:
+        if "/recommendations/candidates?" in url:
             return smoke.HttpResponse(
                 status_code=200,
                 body=json.dumps(
                     {
-                        "success": True,
-                        "data": {
-                            "as_of": "2026-06-09",
-                            "items": [
-                                {
-                                    "ticker": ticker,
-                                    "name": f"테스트 종목 {ticker}",
-                                    "evidence_summary": {
-                                        "news_count": 2,
-                                        "disclosure_count": 1,
-                                        "latest_at": "2026-06-26T03:48:00Z",
-                                    },
-                                }
-                                for ticker in self.tickers
-                            ],
-                        },
+                        "count": len(self.tickers),
+                        "risk_profile": "balanced",
+                        "items": [
+                            {
+                                "ticker": ticker,
+                                "name": f"테스트 종목 {ticker}",
+                                "evidence_count": 3,
+                                "data_freshness": {
+                                    "as_of": "2026-06-09",
+                                    "live_evidence_latest_at": "2026-06-26T03:48:00Z",
+                                },
+                            }
+                            for ticker in self.tickers
+                        ],
                     }
                 ).encode("utf-8"),
             )
-        ticker = self._ticker_from_url(url, "/stocks/candidates/")
+        ticker = self._ticker_from_url(url, "/recommendations/candidates/")
         if ticker:
             evidence_count = 1 if self.weak_detail else 3
             return smoke.HttpResponse(
@@ -71,6 +69,7 @@ class FakeFetcher:
                         "ticker": ticker,
                         "evidence_level": "medium",
                         "evidence_count": evidence_count,
+                        "score_components": score_components(),
                         "risk_tags": ["sector_cycle"],
                         "missing_data": [],
                         "data_freshness": {"as_of": "2026-06-09"},
@@ -205,8 +204,8 @@ def test_recommendation_quality_smoke_passes_with_list_detail_and_evidence() -> 
         "internal_items_with_as_of_date": 0,
     }
     assert [url for url, _ in fetcher.calls] == [
-        "https://api.example.com/v1/stocks/candidates?limit=3",
-        "https://api.example.com/v1/stocks/candidates/005930",
+        "https://api.example.com/v1/recommendations/candidates?limit=3",
+        "https://api.example.com/v1/recommendations/candidates/005930",
         "https://api.example.com/v1/stocks/005930/evidence",
     ]
 
@@ -237,12 +236,106 @@ def test_recommendation_quality_smoke_checks_multiple_listed_tickers() -> None:
     assert result["checks"]["candidate_detail:000660"]["summary"]["ticker"] == "000660"
     assert result["checks"]["stock_evidence:000660"]["summary"]["ticker"] == "000660"
     assert [url for url, _ in fetcher.calls] == [
-        "https://api.example.com/v1/stocks/candidates?limit=3",
-        "https://api.example.com/v1/stocks/candidates/005930",
+        "https://api.example.com/v1/recommendations/candidates?limit=3",
+        "https://api.example.com/v1/recommendations/candidates/005930",
         "https://api.example.com/v1/stocks/005930/evidence",
-        "https://api.example.com/v1/stocks/candidates/000660",
+        "https://api.example.com/v1/recommendations/candidates/000660",
         "https://api.example.com/v1/stocks/000660/evidence",
     ]
+
+
+def test_recommendation_quality_smoke_reports_canonical_detail_target_without_selection() -> None:
+    result = smoke.run_smoke(
+        api_base_url="https://api.example.com",
+        ticker="",
+        limit=3,
+        max_detail_tickers=0,
+        min_evidence_count=2,
+        timeout_seconds=2,
+        fetch=FakeFetcher(),
+    )
+
+    assert result["ok"] is False
+    assert result["checks"]["candidate_detail"]["target"] == (
+        "/v1/recommendations/candidates/{ticker}"
+    )
+    assert {
+        "check": "candidate_detail",
+        "code": "missing_candidate_ticker",
+    } in result["blockers"]
+
+
+def test_recommendation_quality_smoke_requires_complete_score_components() -> None:
+    result = smoke.run_smoke(
+        api_base_url="https://api.example.com/v1",
+        ticker="005930",
+        limit=3,
+        max_detail_tickers=3,
+        min_evidence_count=2,
+        timeout_seconds=2,
+        fetch=ComponentFetcher(score_components()[:-1]),
+    )
+
+    assert result["ok"] is False
+    assert result["checks"]["candidate_detail"]["summary"]["component_count"] == 7
+    assert {
+        "check": "candidate_detail",
+        "code": "score_component_count_mismatch",
+        "component_count": 7,
+        "expected_count": 8,
+    } in result["blockers"]
+    assert {
+        "check": "candidate_detail",
+        "code": "score_components_missing",
+        "components": ["momentum_volatility"],
+    } in result["blockers"]
+
+
+def test_recommendation_quality_smoke_reports_score_component_weight_mismatch() -> None:
+    components = score_components()
+    components[0] = {**components[0], "weight": 21}
+
+    result = smoke.run_smoke(
+        api_base_url="https://api.example.com/v1",
+        ticker="005930",
+        limit=3,
+        max_detail_tickers=3,
+        min_evidence_count=2,
+        timeout_seconds=2,
+        fetch=ComponentFetcher(components),
+    )
+
+    assert result["ok"] is False
+    assert {
+        "check": "candidate_detail",
+        "code": "score_component_weight_mismatch",
+        "component": "financial_stability",
+        "weight": 21,
+        "expected_weight": 20,
+    } in result["blockers"]
+
+
+def test_recommendation_quality_smoke_reports_unexpected_score_component() -> None:
+    components = score_components()
+    components[0] = {**components[0], "name": "unexpected_factor"}
+
+    result = smoke.run_smoke(
+        api_base_url="https://api.example.com/v1",
+        ticker="005930",
+        limit=3,
+        max_detail_tickers=3,
+        min_evidence_count=2,
+        timeout_seconds=2,
+        fetch=ComponentFetcher(components),
+    )
+
+    assert result["ok"] is False
+    assert {
+        "check": "candidate_detail",
+        "code": "unexpected_score_component",
+        "component_index": 0,
+        "component": "unexpected_factor",
+    } in result["blockers"]
 
 
 def test_recommendation_quality_smoke_reports_structured_blockers() -> None:
@@ -362,3 +455,48 @@ def test_recommendation_quality_smoke_does_not_print_raw_provider_text() -> None
     assert "원문 제목" not in serialized
     assert "원문 요약" not in serialized
     assert "provider.example" not in serialized
+
+
+def score_components() -> list[dict[str, object]]:
+    return [
+        {
+            "name": name,
+            "weight": weight,
+            "raw_score": 75.0,
+            "weighted_score": weight * 0.75,
+            "reason": "공개 데이터 기준 검토 포인트가 확인됩니다.",
+            "input_refs": [f"mock:{name}"],
+            "evidence_ids": [],
+        }
+        for name, weight in smoke.EXPECTED_SCORE_COMPONENT_WEIGHTS.items()
+    ]
+
+
+class ComponentFetcher(FakeFetcher):
+    def __init__(self, components: list[dict[str, object]]) -> None:
+        super().__init__()
+        self.components = components
+
+    def __call__(self, url: str, timeout_seconds: float):
+        if "/recommendations/candidates/005930" not in url:
+            return super().__call__(url, timeout_seconds)
+        return smoke.HttpResponse(
+            status_code=200,
+            body=json.dumps(
+                {
+                    "ticker": "005930",
+                    "evidence_level": "medium",
+                    "evidence_count": 3,
+                    "score_components": self.components,
+                    "risk_tags": ["sector_cycle"],
+                    "missing_data": [],
+                    "data_freshness": {"as_of": "2026-06-09"},
+                    "recommendation_reasons": [
+                        {
+                            "reason_id": "rsn_1",
+                            "summary": "공개 데이터 기준 검토 포인트가 확인됩니다.",
+                        }
+                    ],
+                }
+            ).encode("utf-8"),
+        )

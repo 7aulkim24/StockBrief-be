@@ -15,6 +15,16 @@ from typing import Any, Callable
 DEFAULT_API_BASE_URL = "http://localhost:8000/v1"
 DEFAULT_API_ENV = "STOCKBRIEF_API_BASE_URL"
 INTERNAL_EVIDENCE_SOURCE_TYPES = {"SCORE"}
+EXPECTED_SCORE_COMPONENT_WEIGHTS = {
+    "financial_stability": 20,
+    "profitability": 15,
+    "growth": 15,
+    "valuation": 10,
+    "news_attention": 10,
+    "disclosure_event": 10,
+    "liquidity": 10,
+    "momentum_volatility": 10,
+}
 
 Fetch = Callable[[str, float], "HttpResponse"]
 
@@ -144,7 +154,7 @@ def run_smoke(
         checks["candidate_detail"] = CheckResult(
             ok=False,
             name="candidate_detail",
-            target="/v1/stocks/candidates/{ticker}",
+            target="/v1/recommendations/candidates/{ticker}",
             status_code=None,
             summary={"ticker_selected": False},
             blockers=[{"code": "missing_candidate_ticker"}],
@@ -169,12 +179,12 @@ def check_candidate_list(
     timeout_seconds: float,
     fetch: Fetch,
 ) -> CheckResult:
-    path = f"/stocks/candidates?limit={limit}"
+    path = f"/recommendations/candidates?limit={limit}"
     response, payload = get_json(base_url, path, timeout_seconds, fetch)
     if response.error_code or response.status_code != 200 or not isinstance(payload, dict):
         return failed_http_check("candidate_list", path, response)
 
-    data = payload.get("data", {})
+    data = response_payload(payload)
     items = data.get("items", []) if isinstance(data, dict) else []
     blockers: list[dict[str, Any]] = []
     if not items:
@@ -183,7 +193,7 @@ def check_candidate_list(
     weak_items = []
     for item in items if isinstance(items, list) else []:
         evidence_summary = item.get("evidence_summary", {}) if isinstance(item, dict) else {}
-        evidence_count = evidence_total(evidence_summary)
+        evidence_count = int_or_zero(item.get("evidence_count")) or evidence_total(evidence_summary)
         if evidence_count < min_evidence_count:
             weak_items.append(
                 {
@@ -192,7 +202,13 @@ def check_candidate_list(
                     "min_evidence_count": min_evidence_count,
                 }
             )
-        if not evidence_summary.get("latest_at"):
+        data_freshness = item.get("data_freshness", {}) if isinstance(item, dict) else {}
+        latest_at = evidence_summary.get("latest_at") or (
+            data_freshness.get("live_evidence_latest_at")
+            if isinstance(data_freshness, dict)
+            else None
+        )
+        if not latest_at:
             blockers.append({"code": "missing_candidate_latest_at", "ticker": item.get("ticker")})
 
     if weak_items:
@@ -200,6 +216,9 @@ def check_candidate_list(
 
     item_tickers = candidate_tickers(items)
     first_item = items[0] if items else {}
+    first_freshness = (
+        first_item.get("data_freshness", {}) if isinstance(first_item, dict) else {}
+    )
     return CheckResult(
         ok=not blockers,
         name="candidate_list",
@@ -209,7 +228,12 @@ def check_candidate_list(
             "count": len(items) if isinstance(items, list) else 0,
             "first_ticker": first_item.get("ticker") if isinstance(first_item, dict) else "",
             "tickers": item_tickers,
-            "as_of": data.get("as_of") if isinstance(data, dict) else None,
+            "as_of": data.get("as_of")
+            or (
+                first_freshness.get("as_of")
+                if isinstance(first_freshness, dict)
+                else None
+            ),
         },
         blockers=blockers,
     )
@@ -223,7 +247,7 @@ def check_candidate_detail(
     timeout_seconds: float,
     fetch: Fetch,
 ) -> CheckResult:
-    path = f"/stocks/candidates/{urllib.parse.quote(ticker)}"
+    path = f"/recommendations/candidates/{urllib.parse.quote(ticker)}"
     response, payload = get_json(base_url, path, timeout_seconds, fetch)
     if response.error_code or response.status_code != 200 or not isinstance(payload, dict):
         return failed_http_check("candidate_detail", path, response)
@@ -234,6 +258,9 @@ def check_candidate_detail(
     missing_data = payload.get("missing_data")
     data_freshness = payload.get("data_freshness", {})
     reasons = payload.get("recommendation_reasons", [])
+    components = payload.get("score_components", [])
+    component_blockers, component_summary = validate_score_components(components)
+    blockers.extend(component_blockers)
 
     if evidence_count < min_evidence_count:
         blockers.append(
@@ -265,6 +292,7 @@ def check_candidate_detail(
             "missing_data_count": len(missing_data) if isinstance(missing_data, list) else None,
             "as_of": data_freshness.get("as_of") if isinstance(data_freshness, dict) else None,
             "reason_count": len(reasons) if isinstance(reasons, list) else 0,
+            **component_summary,
         },
         blockers=blockers,
     )
@@ -449,6 +477,88 @@ def collect_blockers(checks: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return blockers
 
 
+def validate_score_components(components: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    blockers: list[dict[str, Any]] = []
+    if not isinstance(components, list):
+        return [{"code": "score_components_not_array"}], {
+            "component_count": None,
+            "component_weight_sum": None,
+        }
+
+    component_names: list[str] = []
+    weight_sum = 0
+    for index, component in enumerate(components):
+        if not isinstance(component, dict):
+            blockers.append({"code": "score_component_not_object", "component_index": index})
+            continue
+
+        name = str(component.get("name") or "").strip()
+        component_names.append(name)
+        weight = int_or_zero(component.get("weight"))
+        weight_sum += weight
+
+        expected_weight = EXPECTED_SCORE_COMPONENT_WEIGHTS.get(name)
+        if expected_weight is None:
+            blockers.append(
+                {
+                    "code": "unexpected_score_component",
+                    "component_index": index,
+                    "component": name,
+                }
+            )
+        elif weight != expected_weight:
+            blockers.append(
+                {
+                    "code": "score_component_weight_mismatch",
+                    "component": name,
+                    "weight": weight,
+                    "expected_weight": expected_weight,
+                }
+            )
+
+        if not numeric_or_none(component.get("raw_score")):
+            blockers.append({"code": "score_component_raw_score_invalid", "component": name})
+        if not numeric_value(component.get("weighted_score")):
+            blockers.append({"code": "score_component_weighted_score_invalid", "component": name})
+        if not isinstance(component.get("reason"), str) or not component["reason"].strip():
+            blockers.append({"code": "score_component_reason_missing", "component": name})
+        if not isinstance(component.get("input_refs"), list):
+            blockers.append({"code": "score_component_input_refs_not_array", "component": name})
+        if not isinstance(component.get("evidence_ids"), list):
+            blockers.append({"code": "score_component_evidence_ids_not_array", "component": name})
+
+    missing_components = sorted(set(EXPECTED_SCORE_COMPONENT_WEIGHTS) - set(component_names))
+    duplicate_components = sorted(
+        {name for name in component_names if name and component_names.count(name) > 1}
+    )
+    if len(components) != len(EXPECTED_SCORE_COMPONENT_WEIGHTS):
+        blockers.append(
+            {
+                "code": "score_component_count_mismatch",
+                "component_count": len(components),
+                "expected_count": len(EXPECTED_SCORE_COMPONENT_WEIGHTS),
+            }
+        )
+    if missing_components:
+        blockers.append(
+            {"code": "score_components_missing", "components": missing_components}
+        )
+    if duplicate_components:
+        blockers.append(
+            {"code": "score_components_duplicate", "components": duplicate_components}
+        )
+    if weight_sum != 100:
+        blockers.append(
+            {"code": "score_component_weight_sum_mismatch", "weight_sum": weight_sum}
+        )
+
+    return blockers, {
+        "component_count": len(components),
+        "component_weight_sum": weight_sum,
+        "component_names": sorted(name for name in component_names if name),
+    }
+
+
 def candidate_tickers(items: Any) -> list[str]:
     if not isinstance(items, list):
         return []
@@ -461,6 +571,11 @@ def candidate_tickers(items: Any) -> list[str]:
         if ticker:
             tickers.append(ticker)
     return tickers
+
+
+def response_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    data = payload.get("data")
+    return data if isinstance(data, dict) else payload
 
 
 def select_detail_tickers(
@@ -513,6 +628,14 @@ def int_or_zero(value: Any) -> int:
     if isinstance(value, float):
         return int(value)
     return 0
+
+
+def numeric_value(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def numeric_or_none(value: Any) -> bool:
+    return value is None or numeric_value(value)
 
 
 if __name__ == "__main__":

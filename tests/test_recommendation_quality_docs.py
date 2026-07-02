@@ -26,6 +26,9 @@ def test_recommendation_quality_criteria_document_covers_operating_checks() -> N
     assert "scripts/check_recommendation_quality_smoke.py" in doc
     assert "candidate_evidence_below_minimum" in doc
     assert "evidence_item_missing_source_metadata" in doc
+    assert "metadata.source_identifier" in doc
+    assert "provider_items_with_url" in script
+    assert "internal_items_with_source_identifier" in script
     assert "does not print raw provider bodies" in doc
     assert "check_candidate_list" in script
     assert "check_candidate_detail" in script

@@ -18,7 +18,7 @@ A deployed candidate flow is healthy when all checks pass:
 | Freshness | Candidate list items include `evidence_summary.latest_at`; detail includes `data_freshness.as_of`. | Users need to know the data basis. |
 | Detail contract | `/v1/stocks/candidates/{ticker}` includes `evidence_level`, `evidence_count`, `missing_data`, `risk_tags`, and `recommendation_reasons`. | FE detail and AI explanation need the same source of truth. |
 | Risk context | Detail has at least one risk tag. | A candidate without risk context is incomplete. |
-| Evidence source | `/v1/stocks/{ticker}/evidence` returns public evidence with source type, source name, URL, and published timestamp. | Users must be able to inspect the basis. |
+| Evidence source | `/v1/stocks/{ticker}/evidence` returns source type and source name for every item. Public provider evidence also includes URL and published timestamp; internal score evidence includes `metadata.source_identifier` and `metadata.as_of_date`. | Users must be able to inspect or trace the basis. |
 
 If provider egress is paused for cost control, the quality smoke can still pass
 using the latest stored evidence. Live ingestion reactivation is a separate
@@ -41,8 +41,9 @@ The script calls:
 - `GET /v1/stocks/{ticker}/evidence`
 
 The output is redacted by design. It reports counts, basis dates, source type
-coverage, and structured blocker codes. It does not print raw provider bodies,
-full news text, user tokens, or private account data.
+coverage, provider URL/date coverage, internal score source identifier coverage,
+and structured blocker codes. It does not print raw provider bodies, full news
+text, user tokens, or private account data.
 
 ## Interpreting Failures
 
@@ -58,7 +59,7 @@ full news text, user tokens, or private account data.
 | `missing_recommendation_reasons` | Detail cannot explain why the candidate appears. | Check reason generation and evidence linkage. |
 | `evidence_items_below_minimum` | Evidence tab has too few records. | Check `/v1/stocks/{ticker}/evidence`. |
 | `evidence_item_not_object` | Evidence response contains a malformed item. | Check API response serialization. |
-| `evidence_item_missing_source_metadata` | A specific evidence item lacks `source_type`, `source_name`, `url`, or `published_at`. | Check source document normalization and provider date parsing. |
+| `evidence_item_missing_source_metadata` | A specific evidence item lacks required source metadata. Public provider evidence requires `source_type`, `source_name`, `url`, and `published_at`; internal score evidence requires `source_type`, `source_name`, `metadata.source_identifier`, and `metadata.as_of_date`. | Check source document normalization, provider date parsing, or internal score evidence metadata. |
 
 ## Release Note Template
 
@@ -69,5 +70,7 @@ Recommendation quality smoke:
 - candidate list: pass, count=<n>, first_ticker=<ticker>
 - candidate detail: pass, evidence_level=<level>, evidence_count=<n>, risk_tag_count=<n>
 - stock evidence: pass, evidence_count=<n>, source_types=<types>
+- provider evidence: url_coverage=<n>/<n>, published_at_coverage=<n>/<n>
+- internal score evidence: source_identifier_coverage=<n>/<n>, as_of_date_coverage=<n>/<n>
 - remaining blockers: none
 ```

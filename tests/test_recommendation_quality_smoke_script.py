@@ -24,9 +24,13 @@ class FakeFetcher:
         *,
         weak_detail: bool = False,
         missing_evidence_source_metadata: bool = False,
+        score_evidence_without_url: bool = False,
+        score_evidence_without_metadata: bool = False,
     ) -> None:
         self.weak_detail = weak_detail
         self.missing_evidence_source_metadata = missing_evidence_source_metadata
+        self.score_evidence_without_url = score_evidence_without_url
+        self.score_evidence_without_metadata = score_evidence_without_metadata
         self.calls: list[tuple[str, float]] = []
 
     def __call__(self, url: str, timeout_seconds: float):
@@ -92,6 +96,32 @@ class FakeFetcher:
                     "title": "두 번째 원문 제목",
                     "snippet": "두 번째 원문 요약",
                 }
+            if self.score_evidence_without_url:
+                second_item = {
+                    "id": "price_005930_2026-06-09",
+                    "source_type": "SCORE",
+                    "source_name": "KRX_FALLBACK_MOCK",
+                    "url": None,
+                    "published_at": None,
+                    "title": "가격 지표 fallback mock",
+                    "snippet": "가격 지표 요약",
+                    "metadata": {
+                        "source_identifier": "KRX_FALLBACK_MOCK:005930:2026-06-09",
+                        "as_of_date": "2026-06-09",
+                        "data_status": "fallback",
+                    },
+                }
+            if self.score_evidence_without_metadata:
+                second_item = {
+                    "id": "price_005930_2026-06-09",
+                    "source_type": "SCORE",
+                    "source_name": "KRX_FALLBACK_MOCK",
+                    "url": None,
+                    "published_at": None,
+                    "title": "가격 지표 fallback mock",
+                    "snippet": "가격 지표 요약",
+                    "metadata": {"data_status": "fallback"},
+                }
             return smoke.HttpResponse(
                 status_code=200,
                 body=json.dumps(
@@ -146,6 +176,12 @@ def test_recommendation_quality_smoke_passes_with_list_detail_and_evidence() -> 
         "items_with_source_name": 2,
         "items_with_url": 2,
         "items_with_published_at": 2,
+        "provider_evidence_count": 2,
+        "provider_items_with_url": 2,
+        "provider_items_with_published_at": 2,
+        "internal_evidence_count": 0,
+        "internal_items_with_source_identifier": 0,
+        "internal_items_with_as_of_date": 0,
     }
     assert [url for url, _ in fetcher.calls] == [
         "https://api.example.com/v1/stocks/candidates?limit=3",
@@ -199,7 +235,61 @@ def test_recommendation_quality_smoke_fails_when_evidence_source_metadata_is_par
         "items_with_source_name": 1,
         "items_with_url": 1,
         "items_with_published_at": 1,
+        "provider_evidence_count": 2,
+        "provider_items_with_url": 1,
+        "provider_items_with_published_at": 1,
+        "internal_evidence_count": 0,
+        "internal_items_with_source_identifier": 0,
+        "internal_items_with_as_of_date": 0,
     }
+
+
+def test_recommendation_quality_smoke_accepts_score_evidence_without_public_url() -> None:
+    result = smoke.run_smoke(
+        api_base_url="https://api.example.com/v1",
+        ticker="005930",
+        limit=3,
+        min_evidence_count=2,
+        timeout_seconds=2,
+        fetch=FakeFetcher(score_evidence_without_url=True),
+    )
+
+    assert result["ok"] is True
+    assert result["checks"]["stock_evidence"]["summary"] == {
+        "ticker": "005930",
+        "evidence_count": 2,
+        "source_types": ["NEWS", "SCORE"],
+        "items_with_source_type": 2,
+        "items_with_source_name": 2,
+        "items_with_url": 1,
+        "items_with_published_at": 1,
+        "provider_evidence_count": 1,
+        "provider_items_with_url": 1,
+        "provider_items_with_published_at": 1,
+        "internal_evidence_count": 1,
+        "internal_items_with_source_identifier": 1,
+        "internal_items_with_as_of_date": 1,
+    }
+
+
+def test_recommendation_quality_smoke_requires_score_evidence_metadata() -> None:
+    result = smoke.run_smoke(
+        api_base_url="https://api.example.com/v1",
+        ticker="005930",
+        limit=3,
+        min_evidence_count=2,
+        timeout_seconds=2,
+        fetch=FakeFetcher(score_evidence_without_metadata=True),
+    )
+
+    assert result["ok"] is False
+    assert {
+        "check": "stock_evidence",
+        "code": "evidence_item_missing_source_metadata",
+        "item_index": 1,
+        "evidence_id": "price_005930_2026-06-09",
+        "missing_fields": ["metadata.source_identifier", "metadata.as_of_date"],
+    } in result["blockers"]
 
 
 def test_recommendation_quality_smoke_does_not_print_raw_provider_text() -> None:

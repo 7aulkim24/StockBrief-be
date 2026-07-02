@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 DEFAULT_API_BASE_URL = "http://localhost:8000/v1"
 DEFAULT_API_ENV = "STOCKBRIEF_API_BASE_URL"
+INTERNAL_EVIDENCE_SOURCE_TYPES = {"SCORE"}
 
 Fetch = Callable[[str, float], "HttpResponse"]
 
@@ -283,14 +284,22 @@ def check_stock_evidence(
     items_with_source_name = 0
     items_with_url = 0
     items_with_published_at = 0
-    required_source_fields = ("source_type", "source_name", "url", "published_at")
+    provider_evidence_count = 0
+    provider_items_with_url = 0
+    provider_items_with_published_at = 0
+    internal_evidence_count = 0
+    internal_items_with_source_identifier = 0
+    internal_items_with_as_of_date = 0
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             blockers.append({"code": "evidence_item_not_object", "item_index": index})
             continue
 
-        if item.get("source_type"):
-            source_types.add(str(item["source_type"]))
+        source_type = str(item.get("source_type") or "").upper()
+        metadata = item.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        if source_type:
+            source_types.add(source_type)
             items_with_source_type += 1
         if item.get("source_name"):
             items_with_source_name += 1
@@ -300,10 +309,29 @@ def check_stock_evidence(
             items_with_published_at += 1
 
         missing_fields = [
-            field
-            for field in required_source_fields
-            if not item.get(field)
+            field for field in ("source_type", "source_name") if not item.get(field)
         ]
+        if source_type in INTERNAL_EVIDENCE_SOURCE_TYPES:
+            internal_evidence_count += 1
+            if metadata.get("source_identifier"):
+                internal_items_with_source_identifier += 1
+            else:
+                missing_fields.append("metadata.source_identifier")
+            if metadata.get("as_of_date"):
+                internal_items_with_as_of_date += 1
+            else:
+                missing_fields.append("metadata.as_of_date")
+        else:
+            provider_evidence_count += 1
+            if item.get("url"):
+                provider_items_with_url += 1
+            else:
+                missing_fields.append("url")
+            if item.get("published_at"):
+                provider_items_with_published_at += 1
+            else:
+                missing_fields.append("published_at")
+
         if missing_fields:
             blockers.append(
                 {
@@ -327,6 +355,14 @@ def check_stock_evidence(
             "items_with_source_name": items_with_source_name,
             "items_with_url": items_with_url,
             "items_with_published_at": items_with_published_at,
+            "provider_evidence_count": provider_evidence_count,
+            "provider_items_with_url": provider_items_with_url,
+            "provider_items_with_published_at": provider_items_with_published_at,
+            "internal_evidence_count": internal_evidence_count,
+            "internal_items_with_source_identifier": (
+                internal_items_with_source_identifier
+            ),
+            "internal_items_with_as_of_date": internal_items_with_as_of_date,
         },
         blockers=blockers,
     )

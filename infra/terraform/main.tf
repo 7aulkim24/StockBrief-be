@@ -221,6 +221,8 @@ module "agentcore_runtime" {
   source = "./modules/agentcore_runtime"
 
   name_prefix        = local.name_prefix
+  account_id         = data.aws_caller_identity.current.account_id
+  aws_region         = var.aws_region
   enabled            = var.agentcore_runtime_enabled
   container_uri      = var.agentcore_runtime_container_uri
   network_mode       = var.agentcore_network_mode

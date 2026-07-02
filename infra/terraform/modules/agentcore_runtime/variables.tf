@@ -2,6 +2,14 @@ variable "name_prefix" {
   type = string
 }
 
+variable "account_id" {
+  type = string
+}
+
+variable "aws_region" {
+  type = string
+}
+
 variable "enabled" {
   type    = bool
   default = false

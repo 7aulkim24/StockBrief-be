@@ -24,6 +24,18 @@ data "aws_iam_policy_document" "assume_agentcore" {
       type        = "Service"
       identifiers = ["bedrock-agentcore.amazonaws.com"]
     }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [var.account_id]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:*"]
+    }
   }
 }
 
@@ -37,7 +49,7 @@ resource "aws_iam_role" "runtime" {
 resource "aws_cloudwatch_log_group" "runtime" {
   count = local.enabled ? 1 : 0
 
-  name              = "/aws/bedrock-agentcore/${local.runtime_name}"
+  name              = "/aws/bedrock-agentcore/runtimes/${local.runtime_name}"
   retention_in_days = var.log_retention_days
 }
 
@@ -92,13 +104,50 @@ data "aws_iam_policy_document" "runtime" {
 
   statement {
     actions = [
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
     ]
     resources = [
+      "arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/bedrock-agentcore/*",
+      "arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/bedrock-agentcore/*:*",
       aws_cloudwatch_log_group.runtime[0].arn,
       "${aws_cloudwatch_log_group.runtime[0].arn}:*",
+    ]
+  }
+
+  statement {
+    actions = [
+      "xray:GetSamplingRules",
+      "xray:GetSamplingTargets",
+      "xray:PutTelemetryRecords",
+      "xray:PutTraceSegments",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["bedrock-agentcore"]
+    }
+  }
+
+  statement {
+    actions = [
+      "bedrock-agentcore:GetWorkloadAccessToken",
+      "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+      "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
+    ]
+    resources = [
+      "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:workload-identity-directory/default",
+      "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:workload-identity-directory/default/workload-identity/${local.runtime_name}-*",
     ]
   }
 }

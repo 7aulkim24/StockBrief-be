@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     result = run_smoke(
         api_base_url=args.api_base_url,
         ticker=args.ticker,
+        expected_tickers=args.expected_ticker,
         limit=args.limit,
         max_detail_tickers=args.max_detail_tickers,
         min_evidence_count=args.min_evidence_count,
@@ -81,6 +82,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="API base URL. Both https://... and https://.../v1 are accepted.",
     )
     parser.add_argument("--ticker", default="")
+    parser.add_argument(
+        "--expected-ticker",
+        action="append",
+        default=[],
+        help="Ticker that must appear in the candidate list. Repeat for multiple tickers.",
+    )
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument("--max-detail-tickers", type=int, default=3)
     parser.add_argument("--min-evidence-count", type=int, default=2)
@@ -92,6 +99,7 @@ def run_smoke(
     *,
     api_base_url: str,
     ticker: str = "",
+    expected_tickers: list[str] | tuple[str, ...] | None = None,
     limit: int = 3,
     max_detail_tickers: int = 3,
     min_evidence_count: int = 2,
@@ -111,11 +119,13 @@ def run_smoke(
 
     fetcher = fetch or fetch_url
     checks: dict[str, dict[str, Any]] = {}
+    required_tickers = normalize_tickers(expected_tickers or [])
 
     list_result = check_candidate_list(
         base_url=normalized_base_url,
         limit=limit,
         min_evidence_count=min_evidence_count,
+        expected_tickers=required_tickers,
         timeout_seconds=timeout_seconds,
         fetch=fetcher,
     )
@@ -124,6 +134,7 @@ def run_smoke(
     selected_tickers = select_detail_tickers(
         explicit_ticker=ticker,
         listed_tickers=list_result.summary.get("tickers", []),
+        expected_tickers=required_tickers,
         max_detail_tickers=max_detail_tickers,
     )
     if selected_tickers:
@@ -176,6 +187,7 @@ def check_candidate_list(
     base_url: str,
     limit: int,
     min_evidence_count: int,
+    expected_tickers: list[str],
     timeout_seconds: float,
     fetch: Fetch,
 ) -> CheckResult:
@@ -215,6 +227,17 @@ def check_candidate_list(
         blockers.append({"code": "candidate_evidence_below_minimum", "items": weak_items})
 
     item_tickers = candidate_tickers(items)
+    missing_expected_tickers = [
+        ticker for ticker in expected_tickers if ticker not in item_tickers
+    ]
+    if missing_expected_tickers:
+        blockers.append(
+            {
+                "code": "expected_candidate_ticker_missing",
+                "tickers": missing_expected_tickers,
+            }
+        )
+
     first_item = items[0] if items else {}
     first_freshness = (
         first_item.get("data_freshness", {}) if isinstance(first_item, dict) else {}
@@ -228,6 +251,8 @@ def check_candidate_list(
             "count": len(items) if isinstance(items, list) else 0,
             "first_ticker": first_item.get("ticker") if isinstance(first_item, dict) else "",
             "tickers": item_tickers,
+            "expected_tickers": expected_tickers,
+            "missing_expected_tickers": missing_expected_tickers,
             "as_of": data.get("as_of")
             or (
                 first_freshness.get("as_of")
@@ -573,6 +598,15 @@ def candidate_tickers(items: Any) -> list[str]:
     return tickers
 
 
+def normalize_tickers(raw_tickers: list[str] | tuple[str, ...]) -> list[str]:
+    tickers: list[str] = []
+    for raw_ticker in raw_tickers:
+        ticker = str(raw_ticker or "").strip()
+        if ticker and ticker not in tickers:
+            tickers.append(ticker)
+    return tickers
+
+
 def response_payload(payload: dict[str, Any]) -> dict[str, Any]:
     data = payload.get("data")
     return data if isinstance(data, dict) else payload
@@ -582,6 +616,7 @@ def select_detail_tickers(
     *,
     explicit_ticker: str,
     listed_tickers: Any,
+    expected_tickers: list[str],
     max_detail_tickers: int,
 ) -> list[str]:
     ticker = explicit_ticker.strip()
@@ -591,12 +626,19 @@ def select_detail_tickers(
         return []
 
     selected: list[str] = []
+    listed_lookup = {str(listed_ticker or "").strip() for listed_ticker in listed_tickers}
+    for expected_ticker in expected_tickers:
+        ticker = str(expected_ticker or "").strip()
+        if ticker and ticker in listed_lookup and ticker not in selected:
+            selected.append(ticker)
+
+    limit = max(max_detail_tickers, len(selected))
     for listed_ticker in listed_tickers:
+        if len(selected) >= limit:
+            break
         ticker = str(listed_ticker or "").strip()
         if ticker and ticker not in selected:
             selected.append(ticker)
-        if len(selected) >= max_detail_tickers:
-            break
     return selected
 
 

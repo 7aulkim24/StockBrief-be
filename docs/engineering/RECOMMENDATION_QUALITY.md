@@ -14,6 +14,7 @@ A deployed candidate flow is healthy when all checks pass:
 | Area | Required Signal | Why It Matters |
 | --- | --- | --- |
 | Candidate list | `/v1/recommendations/candidates` returns at least one item. | The FE home and explore views have data to render from the canonical recommendation contract. |
+| Expected candidates | PR-specific expected tickers appear in the candidate list when `--expected-ticker` is used. | Product-flow checks can prove that representative names still surface, not only that any candidate exists. |
 | Evidence count | Each listed item has at least two public evidence records. | A candidate should not be shown from a single weak signal. |
 | Freshness | Candidate list items include `data_freshness.live_evidence_latest_at` or legacy `evidence_summary.latest_at`; detail includes `data_freshness.as_of`. | Users need to know the data basis. |
 | Score components | Detail includes the 8 fixed score components and component weights sum to 100. | The FE score breakdown and score-agent contract must stay aligned. |
@@ -42,6 +43,22 @@ Use `--ticker 005930` when a PR needs to prove one specific candidate only. If
 from the candidate list and checks each selected candidate's detail and evidence
 contracts.
 
+Use `--expected-ticker` when a PR needs to prove that a representative ticker is
+still present in the candidate list. Repeat the option for multiple tickers:
+
+```bash
+STOCKBRIEF_API_BASE_URL="https://hazfha7995.execute-api.ap-northeast-2.amazonaws.com" \
+  uv run python scripts/check_recommendation_quality_smoke.py \
+    --limit 5 \
+    --max-detail-tickers 3 \
+    --expected-ticker 005930 \
+    --expected-ticker 000660
+```
+
+Expected tickers that appear in the list are checked first for detail and
+evidence. If an expected ticker is missing, the helper returns
+`expected_candidate_ticker_missing` without printing raw provider text.
+
 The script calls:
 
 - `GET /v1/recommendations/candidates`
@@ -59,6 +76,7 @@ account data.
 | Blocker | Meaning | First Check |
 | --- | --- | --- |
 | `candidate_list_empty` | No candidates are available. | Check seed/live score rows and candidate eligibility. |
+| `expected_candidate_ticker_missing` | One or more PR-specific expected tickers did not appear in the candidate list. | Check candidate eligibility, score materialization, and the requested `limit`. |
 | `candidate_evidence_below_minimum` | A list item has fewer than two evidence records. | Check ingestion status and evidence joins. |
 | `missing_candidate_latest_at` | Candidate summary has no latest evidence timestamp. | Check `evidence_summary` aggregation. |
 | `detail_evidence_below_minimum` | Detail has too little evidence. | Check `recommendation_scores.evidence_count`. |
@@ -81,6 +99,7 @@ Use this short summary in PRs or issue comments:
 ```text
 Recommendation quality smoke:
 - candidate list: pass, count=<n>, first_ticker=<ticker>
+- expected_tickers=<ticker_a>,<ticker_b>, missing_expected_tickers=[]
 - selected_tickers=<ticker_a>,<ticker_b>,<ticker_c>
 - candidate detail: pass for selected tickers, evidence_count>=<n>, risk_tag_count>=1
 - score components: component_count=8, component_weight_sum=100

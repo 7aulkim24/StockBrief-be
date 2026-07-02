@@ -185,6 +185,8 @@ def test_recommendation_quality_smoke_passes_with_list_detail_and_evidence() -> 
         "count": 1,
         "first_ticker": "005930",
         "tickers": ["005930"],
+        "expected_tickers": [],
+        "missing_expected_tickers": [],
         "as_of": "2026-06-09",
     }
     assert result["checks"]["candidate_detail"]["summary"]["evidence_count"] == 3
@@ -242,6 +244,59 @@ def test_recommendation_quality_smoke_checks_multiple_listed_tickers() -> None:
         "https://api.example.com/v1/recommendations/candidates/000660",
         "https://api.example.com/v1/stocks/000660/evidence",
     ]
+
+
+def test_recommendation_quality_smoke_prioritizes_expected_tickers_for_detail_checks() -> None:
+    fetcher = FakeFetcher(tickers=("005930", "000660", "035420"))
+
+    result = smoke.run_smoke(
+        api_base_url="https://api.example.com",
+        expected_tickers=["035420", "000660"],
+        limit=3,
+        max_detail_tickers=1,
+        min_evidence_count=2,
+        timeout_seconds=2,
+        fetch=fetcher,
+    )
+
+    assert result["ok"] is True
+    assert result["selected_tickers"] == ["035420", "000660"]
+    assert result["checks"]["candidate_list"]["summary"]["expected_tickers"] == [
+        "035420",
+        "000660",
+    ]
+    assert result["checks"]["candidate_list"]["summary"]["missing_expected_tickers"] == []
+    assert [url for url, _ in fetcher.calls] == [
+        "https://api.example.com/v1/recommendations/candidates?limit=3",
+        "https://api.example.com/v1/recommendations/candidates/035420",
+        "https://api.example.com/v1/stocks/035420/evidence",
+        "https://api.example.com/v1/recommendations/candidates/000660",
+        "https://api.example.com/v1/stocks/000660/evidence",
+    ]
+
+
+def test_recommendation_quality_smoke_reports_missing_expected_tickers() -> None:
+    result = smoke.run_smoke(
+        api_base_url="https://api.example.com",
+        expected_tickers=["035420"],
+        limit=3,
+        max_detail_tickers=3,
+        min_evidence_count=2,
+        timeout_seconds=2,
+        fetch=FakeFetcher(tickers=("005930", "000660")),
+    )
+
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert result["ok"] is False
+    assert result["checks"]["candidate_list"]["summary"]["expected_tickers"] == ["035420"]
+    assert result["checks"]["candidate_list"]["summary"]["missing_expected_tickers"] == ["035420"]
+    assert {
+        "check": "candidate_list",
+        "code": "expected_candidate_ticker_missing",
+        "tickers": ["035420"],
+    } in result["blockers"]
+    assert "원문 제목" not in serialized
+    assert "provider.example" not in serialized
 
 
 def test_recommendation_quality_smoke_reports_canonical_detail_target_without_selection() -> None:

@@ -92,13 +92,50 @@ data "aws_iam_policy_document" "runtime" {
 
   statement {
     actions = [
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
     ]
     resources = [
+      "arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/bedrock-agentcore/*",
+      "arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/bedrock-agentcore/*:*",
       aws_cloudwatch_log_group.runtime[0].arn,
       "${aws_cloudwatch_log_group.runtime[0].arn}:*",
+    ]
+  }
+
+  statement {
+    actions = [
+      "xray:GetSamplingRules",
+      "xray:GetSamplingTargets",
+      "xray:PutTelemetryRecords",
+      "xray:PutTraceSegments",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["bedrock-agentcore"]
+    }
+  }
+
+  statement {
+    actions = [
+      "bedrock-agentcore:GetWorkloadAccessToken",
+      "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+      "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
+    ]
+    resources = [
+      "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:workload-identity-directory/default",
+      "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:workload-identity-directory/default/workload-identity/${local.runtime_name}-*",
     ]
   }
 }

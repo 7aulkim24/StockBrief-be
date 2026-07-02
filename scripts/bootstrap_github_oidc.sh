@@ -644,6 +644,7 @@ cat >"${tmpdir}/deploy-policy.json" <<POLICY
         "ec2:DetachInternetGateway",
         "ec2:DisassociateRouteTable",
         "ec2:ModifySecurityGroupRules",
+        "ec2:ModifySubnetAttribute",
         "ec2:ModifyVpcEndpoint",
         "ec2:ReleaseAddress",
         "ec2:ReplaceRoute",

@@ -30,7 +30,7 @@ def test_external_api_logger_redacts_secret_like_request_params(
             "client_secret": "naver-secret",
             "access_token": "token-secret",
             "Authorization": "Bearer nested-token",
-            "corp_code": "MOCK00126380",
+            "corp_code": "00126380",
             "headers": {
                 "X-Naver-Client-Secret": "nested-naver-secret",
                 "X-Naver-Client-Id": "nested-naver-id",
@@ -54,7 +54,7 @@ def test_external_api_logger_redacts_secret_like_request_params(
         "client_secret": "[REDACTED]",
         "access_token": "[REDACTED]",
         "Authorization": "[REDACTED]",
-        "corp_code": "MOCK00126380",
+        "corp_code": "00126380",
         "headers": {
             "X-Naver-Client-Secret": "[REDACTED]",
             "X-Naver-Client-Id": "[REDACTED]",
@@ -187,7 +187,7 @@ def test_opendart_success_uses_corp_code_mapping_without_logging_secret(
             payload={
                 "status": "000",
                 "message": "OK",
-                "list": [{"corp_code": request.params["corp_code"], "report_nm": "mock"}],
+                "list": [{"corp_code": request.params["corp_code"], "report_nm": "provider report"}],
             },
         )
 
@@ -208,8 +208,8 @@ def test_opendart_success_uses_corp_code_mapping_without_logging_secret(
     ).list_disclosures(ticker="005930")
 
     assert result.data_status == "available"
-    assert result.payload["list"][0]["corp_code"] == "MOCK00126380"
-    assert calls[0].params["corp_code"] == "MOCK00126380"
+    assert result.payload["list"][0]["corp_code"] == "00126380"
+    assert calls[0].params["corp_code"] == "00126380"
     assert calls[0].params["crtfc_key"] == "opendart-secret"
     assert cached_result.from_cache is True
 
@@ -220,13 +220,13 @@ def test_opendart_success_uses_corp_code_mapping_without_logging_secret(
     assert request_params
     assert "crtfc_key" not in request_params[-1]
     assert request_params[-1] == {
-        "corp_code": "MOCK00126380",
+        "corp_code": "00126380",
         "page_count": 10,
     }
     assert "opendart-secret" not in str(request_params)
 
 
-def test_naver_news_fallback_without_credentials_has_news_item_shape(
+def test_naver_news_fallback_without_credentials_returns_missing_data_only(
     seeded_session: Session,
 ) -> None:
     client = NaverNewsClient(
@@ -240,8 +240,7 @@ def test_naver_news_fallback_without_credentials_has_news_item_shape(
     result = client.search_news(ticker="005930", company_name="삼성전자")
 
     assert result.data_status == "fallback"
-    item = result.payload["items"][0]
-    assert {"title", "originallink", "link", "description", "pubDate"}.issubset(item)
+    assert result.payload["items"] == []
     assert result.missing_data[0]["field"] == "NAVER_CLIENT_ID/NAVER_CLIENT_SECRET"
 
 
@@ -261,10 +260,10 @@ def test_naver_news_success_normalizes_payload_and_does_not_log_secrets(
                 "display": 1,
                 "items": [
                     {
-                        "title": "mock title",
+                        "title": "provider response title",
                         "originallink": "https://news.example/original",
                         "link": "https://news.example/link",
-                        "description": "mock description",
+                        "description": "provider response description",
                         "pubDate": "Tue, 09 Jun 2026 09:00:00 +0900",
                         "extra": "ignored",
                     }
@@ -285,10 +284,10 @@ def test_naver_news_success_normalizes_payload_and_does_not_log_secrets(
     assert captured_headers[0]["X-Naver-Client-Secret"] == "naver-secret"
     assert result.payload["items"] == [
         {
-            "title": "mock title",
+            "title": "provider response title",
             "originallink": "https://news.example/original",
             "link": "https://news.example/link",
-            "description": "mock description",
+            "description": "provider response description",
             "pubDate": "Tue, 09 Jun 2026 09:00:00 +0900",
         }
     ]
@@ -305,7 +304,12 @@ def test_krx_fallback_without_live_configuration_does_not_call_external_api(
     seeded_session: Session,
 ) -> None:
     client = KrxClient(
-        settings=Settings(KRX_DAILY_URL="", KRX_API_KEY=""),
+        settings=Settings(
+            KRX_DAILY_URL="",
+            KRX_KOSPI_DAILY_URL="",
+            KRX_KOSDAQ_DAILY_URL="",
+            KRX_API_KEY="",
+        ),
         session=seeded_session,
         transport=lambda _request: (_ for _ in ()).throw(
             AssertionError("transport should not be called without KRX configuration")
@@ -317,7 +321,7 @@ def test_krx_fallback_without_live_configuration_does_not_call_external_api(
     assert result.data_status == "fallback"
     assert result.payload["fallback"] is True
     assert result.payload["OutBlock_1"] == []
-    assert result.missing_data[0]["field"] == "KRX_DAILY_URL"
+    assert result.missing_data[0]["field"] == "KRX_DAILY_URL/KRX_KOSPI_DAILY_URL"
 
     cache_entry = seeded_session.scalars(
         select(ApiCacheEntry).where(ApiCacheEntry.provider == KRX_PROVIDER)
@@ -379,6 +383,44 @@ def test_krx_success_uses_configured_endpoint_without_logging_secret(
     ).all()
     assert logs
     assert "krx-secret" not in str([log.request_params for log in logs])
+
+
+def test_krx_kosdaq_success_uses_market_specific_endpoint(
+    seeded_session: Session,
+) -> None:
+    calls: list[ExternalRequest] = []
+
+    def transport(request: ExternalRequest) -> ExternalResponse:
+        calls.append(request)
+        return ExternalResponse(
+            status_code=200,
+            payload={
+                "OutBlock_1": [
+                    {
+                        "BAS_DD": "20260609",
+                        "ISU_SRT_CD": "035900",
+                        "TDD_CLSPRC": "90,000",
+                    }
+                ]
+            },
+        )
+
+    client = KrxClient(
+        settings=Settings(
+            KRX_KOSPI_DAILY_URL="https://krx.example/kospi",
+            KRX_KOSDAQ_DAILY_URL="https://krx.example/kosdaq",
+            KRX_API_KEY="krx-secret",
+        ),
+        session=seeded_session,
+        transport=transport,
+    )
+
+    result = client.daily_trading(ticker="035900", base_date="20260609", market="KOSDAQ")
+
+    assert result.data_status == "available"
+    assert result.payload["market"] == "KOSDAQ"
+    assert calls[0].url == "https://krx.example/kosdaq"
+    assert calls[0].headers == {"AUTH_KEY": "krx-secret"}
 
 
 def test_external_api_failure_returns_fallback_instead_of_raising(

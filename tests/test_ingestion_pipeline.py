@@ -176,7 +176,7 @@ def test_opendart_ingestion_upserts_disclosures_and_sources(
         return ExternalApiResult(
             provider=OPENDART_PROVIDER,
             endpoint="/list.json",
-            cache_key=f"disclosures:{ticker}:mock:{page_count}",
+            cache_key=f"disclosures:{ticker}:sample:{page_count}",
             data_status="available",
             status_code=200,
             payload={
@@ -396,7 +396,7 @@ def test_explicit_run_id_is_scoped_per_ticker_in_batch(
         return ExternalApiResult(
             provider=OPENDART_PROVIDER,
             endpoint="/list.json",
-            cache_key=f"disclosures:{ticker}:mock:{page_count}",
+            cache_key=f"disclosures:{ticker}:sample:{page_count}",
             data_status="available",
             status_code=200,
             payload={
@@ -551,7 +551,7 @@ def test_ingestion_status_summarizes_recent_runs_and_latest_evidence(
         return ExternalApiResult(
             provider=OPENDART_PROVIDER,
             endpoint="/list.json",
-            cache_key=f"disclosures:{ticker}:mock:{page_count}",
+            cache_key=f"disclosures:{ticker}:sample:{page_count}",
             data_status="available",
             status_code=200,
             payload={
@@ -790,7 +790,7 @@ def test_refresh_score_snapshots_uses_successful_krx_tickers_and_marks_partial_f
     monkeypatch,
     seeded_session: Session,
 ) -> None:
-    def fake_daily_trading(self, *, ticker: str, base_date: str):
+    def fake_daily_trading(self, *, ticker: str, base_date: str, market: str = "KOSPI"):
         if ticker == "000660":
             return ExternalApiResult(
                 provider=KRX_PROVIDER,
@@ -819,7 +819,7 @@ def test_refresh_score_snapshots_uses_successful_krx_tickers_and_marks_partial_f
                 "OutBlock_1": [
                     {
                         "BAS_DD": base_date,
-                        "ISU_SRT_CD": ticker,
+                        "ISU_CD": ticker,
                         "TDD_CLSPRC": "70,000",
                         "ACC_TRDVOL": "1,234,567",
                         "ACC_TRDVAL": "86,419,690,000",
@@ -896,7 +896,7 @@ def test_persist_failure_rolls_back_normalized_rows_before_marking_failed(
         return ExternalApiResult(
             provider=OPENDART_PROVIDER,
             endpoint="/list.json",
-            cache_key=f"disclosures:{ticker}:mock:{page_count}",
+            cache_key=f"disclosures:{ticker}:sample:{page_count}",
             data_status="available",
             status_code=200,
             payload={
@@ -1021,7 +1021,9 @@ def test_hydrate_external_api_settings_reads_external_secret(monkeypatch) -> Non
             "NAVER_CLIENT_ID": "naver-id",
             "NAVER_CLIENT_SECRET": "naver-secret",
             "KRX_API_KEY": "krx-secret",
-            "KRX_DAILY_URL": "https://krx.example/daily",
+            "KRX_KOSPI_DAILY_URL": "https://krx.example/kospi",
+            "KRX_KOSDAQ_DAILY_URL": "https://krx.example/kosdaq",
+            "KRX_API_KEY_HEADER": "X-KRX-KEY",
         },
     )
 
@@ -1033,7 +1035,9 @@ def test_hydrate_external_api_settings_reads_external_secret(monkeypatch) -> Non
     assert settings.naver_client_id == "naver-id"
     assert settings.naver_client_secret == "naver-secret"
     assert settings.krx_api_key == "krx-secret"
-    assert settings.krx_daily_url == "https://krx.example/daily"
+    assert settings.krx_kospi_daily_url == "https://krx.example/kospi"
+    assert settings.krx_kosdaq_daily_url == "https://krx.example/kosdaq"
+    assert settings.krx_api_key_header == "X-KRX-KEY"
 
 
 def test_check_ingestion_readiness_reports_missing_configuration_without_secret_values() -> None:
@@ -1054,7 +1058,8 @@ def test_check_ingestion_readiness_reports_missing_configuration_without_secret_
         },
         KRX_PROVIDER: {
             "api_key_configured": False,
-            "daily_url_configured": False,
+            "kospi_daily_url_configured": True,
+            "kosdaq_daily_url_configured": True,
         },
     }
     assert result["checks"]["network"]["outbound_internet_egress_verified"] is False
@@ -1065,7 +1070,6 @@ def test_check_ingestion_readiness_reports_missing_configuration_without_secret_
         {"code": "missing_provider_credential", "field": "NAVER_CLIENT_ID"},
         {"code": "missing_provider_credential", "field": "NAVER_CLIENT_SECRET"},
         {"code": "missing_provider_credential", "field": "KRX_API_KEY"},
-        {"code": "missing_provider_endpoint", "field": "KRX_DAILY_URL"},
     ]
 
 
@@ -1079,7 +1083,6 @@ def test_check_ingestion_readiness_loads_external_secret_without_exposing_values
             "NAVER_CLIENT_ID": "naver-id",
             "NAVER_CLIENT_SECRET": "naver-secret",
             "KRX_API_KEY": "krx-secret",
-            "KRX_DAILY_URL": "https://krx.example/daily",
         },
     )
 

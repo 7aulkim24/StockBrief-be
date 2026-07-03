@@ -9,9 +9,13 @@ Required environment variables:
   OPENDART_API_KEY
   NAVER_CLIENT_ID
   NAVER_CLIENT_SECRET
+  KRX_API_KEY
 
 Optional environment variables:
-  KRX_DATA_PATH
+  KRX_API_KEY_HEADER
+  KRX_DAILY_URL
+  KRX_KOSPI_DAILY_URL
+  KRX_KOSDAQ_DAILY_URL
 
 Examples:
   scripts/update_external_api_secret.sh --prompt --dry-run
@@ -116,6 +120,7 @@ if [ "$prompt_for_missing" = "true" ]; then
   prompt_secret OPENDART_API_KEY
   prompt_secret NAVER_CLIENT_ID
   prompt_secret NAVER_CLIENT_SECRET
+  prompt_secret KRX_API_KEY
 fi
 
 tmp_payload="$(mktemp "${TMPDIR:-/tmp}/stockbrief-external-api-secret.XXXXXX.json")"
@@ -129,7 +134,12 @@ import json
 import os
 import sys
 
-required_keys = ("OPENDART_API_KEY", "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET")
+required_keys = (
+    "OPENDART_API_KEY",
+    "NAVER_CLIENT_ID",
+    "NAVER_CLIENT_SECRET",
+    "KRX_API_KEY",
+)
 missing = [key for key in required_keys if not os.environ.get(key)]
 if missing:
     print(
@@ -142,8 +152,15 @@ payload = {
     "OPENDART_API_KEY": os.environ["OPENDART_API_KEY"],
     "NAVER_CLIENT_ID": os.environ["NAVER_CLIENT_ID"],
     "NAVER_CLIENT_SECRET": os.environ["NAVER_CLIENT_SECRET"],
-    "KRX_DATA_PATH": os.environ.get("KRX_DATA_PATH", ""),
+    "KRX_API_KEY": os.environ["KRX_API_KEY"],
 }
+optional_keys = (
+    "KRX_API_KEY_HEADER",
+    "KRX_DAILY_URL",
+    "KRX_KOSPI_DAILY_URL",
+    "KRX_KOSDAQ_DAILY_URL",
+)
+payload.update({key: os.environ[key] for key in optional_keys if os.environ.get(key)})
 
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
     json.dump(payload, handle, ensure_ascii=False, sort_keys=True)

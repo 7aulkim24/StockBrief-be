@@ -30,7 +30,7 @@ output "rds_endpoint" {
 }
 
 output "external_api_secret_arn" {
-  description = "Secrets Manager ARN for OpenDART/NAVER API credentials."
+  description = "Secrets Manager ARN for OpenDART/NAVER/KRX API credentials."
   value       = module.secrets.external_api_secret_arn
   sensitive   = true
 }

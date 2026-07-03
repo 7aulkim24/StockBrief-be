@@ -3,9 +3,9 @@
 This document is the canonical StockBrief public API contract for the
 `factor-rank-2026-06-30` score contract.
 
-The API serves mock/seed data only in this sprint. OpenDART, NAVER, KRX,
-Bedrock, and RAG ingestion adapters must keep the same response shape when
-real data is attached later.
+The API serves stored StockBrief data materialized from the stock universe and
+real provider ingestion paths. OpenDART, NAVER, KRX, Bedrock, and RAG ingestion
+adapters must keep the same response shape as provider coverage expands.
 
 ## 1. Base URL
 
@@ -78,11 +78,11 @@ List responses use common pagination:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/v1/health` | Runtime health metadata |
-| `GET` | `/v1/stocks/search` | Search seed/mock stocks |
-| `GET` | `/v1/stocks/candidates` | List deterministic mock candidates |
+| `GET` | `/v1/stocks/search` | Search stock universe rows |
+| `GET` | `/v1/stocks/candidates` | List materialized score candidates |
 | `GET` | `/v1/stocks/{ticker}` | Stock detail for the detail page |
 | `GET` | `/v1/stocks/{ticker}/evidence` | Evidence for tabs and chat citations |
-| `POST` | `/v1/chat` | Deterministic mock Agent/RAG answer |
+| `POST` | `/v1/chat` | Stored-score Agent/RAG answer |
 
 Legacy/internal recommendation engine endpoints remain available for backend
 compatibility:
@@ -93,10 +93,9 @@ compatibility:
 
 New frontend work should prefer the public endpoints in the table above.
 
-Score-backed candidate and score endpoints use stored deterministic scores.
-The current mock seed baseline stores `mock-score-rules-2026-06-09` in public
-`score.version` fields. After score materialization is connected, newly
-materialized scores must store `factor-rank-2026-06-30` in the same field.
+Score-backed candidate and score endpoints use stored materialized scores.
+The current public baseline stores `factor-rank-2026-06-30` in public
+`score.version` fields.
 
 Candidate score contract fields:
 
@@ -110,10 +109,10 @@ Candidate score contract fields:
 - `data_freshness`: freshness metadata, including `as_of`.
 - `risk_tags`: risk signal tags associated with the same ticker and score date.
 
-Future materialized score fields:
+Materialized score fields not currently exposed in public responses:
 
 - `fallback_data`: fallback component names from the score engine contract.
-  Downstream persistence must preserve it when score materialization starts.
+  Downstream persistence preserves it for internal freshness diagnostics.
 - Component `rule_version`: the score engine emits this internally, but the
   current public component response does not expose it.
 - Score result `score_version`: the score engine emits this internally, while
@@ -152,7 +151,7 @@ Response `data`:
       "name": "삼성전자",
       "market": "KOSPI",
       "sector": "반도체",
-      "corp_code": "MOCK00126380",
+      "corp_code": "00126380",
       "match_reason": "name"
     }
   ],
@@ -201,7 +200,7 @@ Response `data`:
         "total": 78.5,
         "grade": "B",
         "as_of": "2026-06-09",
-        "version": "mock-score-rules-2026-06-09",
+        "version": "factor-rank-2026-06-30",
         "breakdown": {
           "momentum": 7.5,
           "liquidity": 7.8,
@@ -242,7 +241,7 @@ Response `data`:
     "name": "삼성전자",
     "market": "KOSPI",
     "sector": "반도체",
-    "corp_code": "MOCK00126380"
+    "corp_code": "00126380"
   },
   "price": {
     "close": 70200,
@@ -254,7 +253,7 @@ Response `data`:
     "total": 78.5,
     "grade": "B",
     "as_of": "2026-06-09",
-    "version": "mock-score-rules-2026-06-09",
+    "version": "factor-rank-2026-06-30",
     "breakdown": {
       "momentum": 7.5,
       "liquidity": 7.8,
@@ -263,20 +262,20 @@ Response `data`:
     }
   },
   "brief": {
-    "summary": "삼성전자는 공개 데이터 기반 mock 점수와 근거로 검토 후보에 포함된 종목입니다.",
+    "summary": "삼성전자는 공개 데이터 기반 점수와 근거로 검토 후보에 포함된 종목입니다.",
     "risk_notes": [
-      "실데이터 연동 전 mock 데이터 기준입니다.",
+      "OpenDART, NAVER, KRX 등 연결된 원천 데이터 기준입니다.",
       "투자 판단 전 원문과 최신 데이터를 확인해야 합니다."
     ],
     "as_of": "2026-06-09"
   },
   "evidence_preview": [
     {
-      "id": "ev_mock_005930_news",
+      "id": "ev_provider_005930_news",
       "source_type": "NEWS",
-      "title": "[MOCK NEWS] 삼성전자 산업 동향 데모 기사",
-      "source_name": "NAVER_NEWS_MOCK",
-      "url": "https://mock.stockbrief.local/naver-news/005930",
+      "title": "삼성전자 산업 동향 기사",
+      "source_name": "NAVER_NEWS",
+      "url": "https://news.naver.com/main/read.naver?oid=000&aid=0000000000",
       "published_at": "2026-06-08T09:00:00Z"
     }
   ]
@@ -304,16 +303,16 @@ Response `data`:
   "ticker": "005930",
   "items": [
     {
-      "id": "ev_mock_005930_news",
+      "id": "ev_provider_005930_news",
       "source_type": "NEWS",
-      "title": "[MOCK NEWS] 삼성전자 산업 동향 데모 기사",
-      "source_name": "NAVER_NEWS_MOCK",
-      "url": "https://mock.stockbrief.local/naver-news/005930",
+      "title": "삼성전자 산업 동향 기사",
+      "source_name": "NAVER_NEWS",
+      "url": "https://news.naver.com/main/read.naver?oid=000&aid=0000000000",
       "published_at": "2026-06-08T09:00:00Z",
-      "snippet": "데모 뉴스 데이터에서 시장 관심도 검토 포인트가 확인됩니다.",
+      "snippet": "NAVER 뉴스에서 시장 관심도 검토 포인트가 확인됩니다.",
       "metadata": {
         "data_status": "available",
-        "source_identifier": "mock-news-005930",
+        "source_identifier": "naver-news-005930-20260608",
         "as_of_date": "2026-06-08"
       }
     }
@@ -351,13 +350,13 @@ Response `data`:
 {
   "session_id": "local-session-1",
   "message_id": null,
-  "answer": "mock 데이터 기준 설명입니다.",
+  "answer": "공개 데이터 기준 설명입니다.",
   "citations": [
     {
-      "id": "ev_mock_005930_news",
+      "id": "ev_provider_005930_news",
       "source_type": "NEWS",
-      "title": "[MOCK NEWS] 삼성전자 산업 동향 데모 기사",
-      "url": "https://mock.stockbrief.local/naver-news/005930",
+      "title": "삼성전자 산업 동향 기사",
+      "url": "https://news.naver.com/main/read.naver?oid=000&aid=0000000000",
       "published_at": null
     }
   ],
@@ -456,10 +455,10 @@ Response:
       "ticker": "005930",
       "citations": [
         {
-          "evidence_id": "ev_mock_005930_news",
+          "evidence_id": "ev_provider_005930_news",
           "type": "news",
-          "title": "[MOCK NEWS] 삼성전자 산업 동향 데모 기사",
-          "source_url": "https://mock.stockbrief.local/naver-news/005930",
+          "title": "삼성전자 산업 동향 기사",
+          "source_url": "https://news.naver.com/main/read.naver?oid=000&aid=0000000000",
           "published_at": "2026-06-08T09:00:00Z"
         }
       ],

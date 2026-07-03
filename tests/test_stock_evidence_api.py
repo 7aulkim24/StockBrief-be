@@ -88,7 +88,7 @@ def test_stock_detail_returns_identifiers(seeded_api_client: TestClient) -> None
     data = payload["data"]
     assert data["stock"]["ticker"] == "005930"
     assert data["stock"]["name"] == "삼성전자"
-    assert data["stock"]["corp_code"] == "MOCK00126380"
+    assert data["stock"]["corp_code"] == "00126380"
     assert {"stock", "price", "score", "brief", "evidence_preview"}.issubset(data)
     assert {"total", "grade", "as_of", "version", "breakdown"}.issubset(data["score"])
 
@@ -98,12 +98,14 @@ def test_stock_candidates_respect_risk_profile_sorting(
     seeded_session: Session,
 ) -> None:
     score = seeded_session.scalars(
-        select(RecommendationScore).where(RecommendationScore.ticker == "005930")
-    ).one()
+        select(RecommendationScore)
+        .order_by(RecommendationScore.total_score.desc(), RecommendationScore.ticker.asc())
+    ).first()
+    assert score is not None
     for index in range(5):
         seeded_session.add(
             RiskSignal(
-                ticker="005930",
+                ticker=score.ticker,
                 as_of_date=score.as_of_date,
                 risk_tag=f"extra_review_risk_{index}",
                 severity="medium",
@@ -126,8 +128,8 @@ def test_stock_candidates_respect_risk_profile_sorting(
 
     assert aggressive.status_code == 200
     assert conservative.status_code == 200
-    assert aggressive.json()["data"]["items"][0]["ticker"] == "005930"
-    assert conservative.json()["data"]["items"][0]["ticker"] != "005930"
+    assert aggressive.json()["data"]["items"][0]["ticker"] == score.ticker
+    assert conservative.json()["data"]["items"][0]["ticker"] != score.ticker
 
 
 def test_stock_candidates_include_items_without_risk_signals(
@@ -488,9 +490,9 @@ def test_price_evidence_has_source_identifier_when_url_is_missing(
     ]
     assert price_items
     assert price_items[0]["url"] is None
-    assert price_items[0]["source_name"] == "KRX_FALLBACK_MOCK"
+    assert price_items[0]["source_name"] == "KRX"
     assert price_items[0]["metadata"]["source_identifier"]
-    assert price_items[0]["metadata"]["data_status"] == "fallback"
+    assert price_items[0]["metadata"]["data_status"] == "available"
 
 
 def test_stock_evidence_empty_result_has_clear_message(

@@ -218,7 +218,7 @@ def test_chat_bedrock_provider_returns_model_answer_with_existing_citations(
                                 "text": (
                                     "삼성전자(005930)는 공개 데이터 기준 추천 후보 점수와 "
                                     "연결 근거가 확인된 검토 대상입니다. "
-                                    "[ev_mock_005930_disclosure] 근거를 함께 확인하세요."
+                                        "[ev_provider_005930_disclosure] 근거를 함께 확인하세요."
                                 )
                             }
                         ]
@@ -290,7 +290,7 @@ def test_chat_bedrock_provider_retries_once_when_citations_are_missing(
                             {
                                 "text": (
                                     "삼성전자(005930)는 공개 데이터 기준 검토 대상입니다. "
-                                    "[ev_mock_005930_disclosure]"
+                                        "[ev_provider_005930_disclosure]"
                                 )
                             }
                         ]
@@ -730,7 +730,7 @@ def test_chat_bedrock_provider_logs_likely_false_positive_guard_without_raw_answ
     raw_model_answer = (
         "삼성전자(005930)는 공개 데이터 기준 검토 대상입니다. "
         "매수 권유가 아닙니다. "  # policy-scan: allow model-output-guard-test
-        "[ev_mock_005930_disclosure] 근거를 확인하세요."
+        "[ev_provider_005930_disclosure] 근거를 확인하세요."
     )
 
     class FakeBedrockClient:

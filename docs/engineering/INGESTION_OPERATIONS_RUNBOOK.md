@@ -41,7 +41,10 @@ payloads into PR comments, shared logs, or issue comments.
   provider calls outside a reviewed live window.
 - External API credentials are stored in Secrets Manager outside git. Use the
   repository helper so the secret payload is written to a temporary file and
-  removed automatically:
+  removed automatically.
+- KRX daily endpoints default to the KRX API spec URLs (`stk_bydd_trd` for
+  KOSPI and `ksq_bydd_trd` for KOSDAQ); use secret endpoint overrides only when
+  the provider issues a different dev endpoint.
 
   ```bash
   scripts/update_external_api_secret.sh --prompt --dry-run
@@ -52,7 +55,7 @@ payloads into PR comments, shared logs, or issue comments.
   `get-secret-value` in shared logs because it prints the secret payload. If
   Terraform state access fails, pass the external API secret ARN with
   `--secret-id` to skip state lookup.
-- Lambda has outbound internet egress for OpenDART and NAVER. Verify it from the
+- Lambda has outbound internet egress for OpenDART, NAVER, and KRX. Verify it from the
   Lambda runtime after the readiness check:
 
   NAT may be enabled only during the live ingestion smoke window. The current
@@ -77,9 +80,9 @@ payloads into PR comments, shared logs, or issue comments.
     --region ap-northeast-2
   ```
 
-  The operation does not send API keys or client secrets. KRX requires
-  `KRX_DAILY_URL` to be configured before this check can probe its endpoint.
-  HTTP responses such as `401`, `403`, or provider validation errors still
+  The operation does not send API keys or client secrets. KRX uses the checked-in
+  KRX spec KOSPI endpoint unless `KRX_DAILY_URL` or `KRX_KOSPI_DAILY_URL`
+  overrides it. HTTP responses such as `401`, `403`, or provider validation errors still
   prove network reachability. DNS, connection, and timeout failures mean
   provider egress is not ready. An S3 Gateway endpoint only covers raw archive
   writes to S3.
@@ -87,9 +90,9 @@ payloads into PR comments, shared logs, or issue comments.
   Lambda responses into shared logs:
 
   ```bash
-  AWS_PROFILE=stockbrief-dev \
   uv run python scripts/check_ingestion_smoke.py \
     --function-name stockbrief-dev-api \
+    --profile stockbrief-dev \
     --providers OpenDART NAVER_NEWS KRX \
     --tickers 005930
   ```
@@ -109,7 +112,7 @@ payloads into PR comments, shared logs, or issue comments.
     --region ap-northeast-2
   ```
 
-## Local Mocked Verification
+## Local Patched Adapter Verification
 
 Run these commands from `StockBrief-be` before requesting AWS dev smoke:
 
@@ -119,9 +122,9 @@ uv run pytest tests/test_external_adapters.py
 uv run pytest tests/test_recommendation_materializer.py
 ```
 
-The mocked KRX path does not require live credentials. The local tests patch the
-KRX provider client, ingest one successful ticker and one fallback ticker, then
-verify that score refresh runs only for the eligible ticker and records
+The local KRX adapter test does not require live credentials. It patches the KRX
+provider client, ingests one successful ticker and one fallback ticker, then
+verifies that score refresh runs only for the eligible ticker and records
 `data_freshness.providers.KRX.status = partial_failed`.
 
 ## Score Refresh Operation
@@ -131,7 +134,7 @@ eligible score snapshots. The operation runs provider ingestion first when
 `provider` is present, sends only succeeded or replayed tickers to the
 materializer, and records provider freshness on refreshed snapshots.
 
-Local mocked shape:
+Local patched adapter shape:
 
 ```json
 {
@@ -157,35 +160,51 @@ Use one ticker first. Replace `YYYY-MM-DD` with the business date you want to
 verify. Keep the response files in `/tmp` and summarize only the non-secret
 status fields in PR evidence.
 
-OpenDART:
+Seed stock universe master rows before provider refresh. This operation writes
+only `stocks` and OpenDART `company_identifiers`; source documents, evidence,
+prices, and recommendation scores are created by provider ingestion and score
+materialization.
 
 ```bash
 aws lambda invoke \
   --function-name stockbrief-dev-api \
-  --payload '{"stockbrief_operation":"ingest_provider_batch","provider":"OpenDART","tickers":["005930"],"source_date":"YYYY-MM-DD"}' \
+  --payload '{"stockbrief_operation":"seed_stock_universe","tickers":["005930"]}' \
   --cli-binary-format raw-in-base64-out \
-  /tmp/stockbrief-opendart-ingest-response.json \
+  /tmp/stockbrief-seed-stock-universe-response.json \
   --profile stockbrief-dev \
   --region ap-northeast-2
 ```
 
-NAVER news:
+OpenDART refresh:
 
 ```bash
 aws lambda invoke \
   --function-name stockbrief-dev-api \
-  --payload '{"stockbrief_operation":"ingest_provider_batch","provider":"NAVER_NEWS","tickers":["005930"],"source_date":"YYYY-MM-DD"}' \
+  --payload '{"stockbrief_operation":"refresh_score_snapshots","provider":"OpenDART","tickers":["005930"],"source_date":"YYYY-MM-DD"}' \
   --cli-binary-format raw-in-base64-out \
-  /tmp/stockbrief-naver-ingest-response.json \
+  /tmp/stockbrief-opendart-refresh-response.json \
+  --profile stockbrief-dev \
+  --region ap-northeast-2
+```
+
+NAVER news refresh:
+
+```bash
+aws lambda invoke \
+  --function-name stockbrief-dev-api \
+  --payload '{"stockbrief_operation":"refresh_score_snapshots","provider":"NAVER_NEWS","tickers":["005930"],"source_date":"YYYY-MM-DD"}' \
+  --cli-binary-format raw-in-base64-out \
+  /tmp/stockbrief-naver-refresh-response.json \
   --profile stockbrief-dev \
   --region ap-northeast-2
 ```
 
 KRX price refresh:
 
-Run this only after the developer confirms the KRX dev endpoint and credential
-are present in Secrets Manager and Lambda egress is approved for the smoke
-window.
+Run this only after the developer confirms `KRX_API_KEY` is present in Secrets
+Manager and Lambda egress is approved for the smoke window. The default KRX
+daily endpoints come from the workspace KRX API specs under
+`../docs/engineering/api-specs/krx_api_spec/`.
 
 ```bash
 aws lambda invoke \
@@ -198,23 +217,30 @@ aws lambda invoke \
 ```
 
 When credentials and egress are ready, the same helper can run one manual
-provider ingest per selected provider:
+provider refresh per selected provider:
 
 ```bash
-AWS_PROFILE=stockbrief-dev \
 uv run python scripts/check_ingestion_smoke.py \
   --function-name stockbrief-dev-api \
-  --providers OpenDART NAVER_NEWS \
+  --profile stockbrief-dev \
+  --providers OpenDART NAVER_NEWS KRX \
   --tickers 005930 \
   --source-date YYYY-MM-DD \
   --run-provider-ingest
 ```
+
+With `--run-provider-ingest`, the helper first verifies readiness, raw archive
+write, and provider egress. Only when those preflight checks pass does it invoke
+`seed_stock_universe`, followed by one `refresh_score_snapshots` operation per
+selected provider. When preflight fails, it reports `preflight_not_ready` and
+does not call seed or refresh operations.
 
 Expected result:
 
 - Lambda invoke status is `200`.
 - Response `ok` is `true`, or a provider-specific partial status is understood
   and documented.
+- Refreshed recommendation rows include `data_freshness.providers.<provider>`.
 - Missing credential errors such as `missing_api_key` are absent.
 - Re-running the same input returns a replayed or duplicate-safe result instead
   of creating uncontrolled duplicate rows.
@@ -447,14 +473,14 @@ Do not enable EventBridge Scheduler until all conditions are true:
   ```bash
   aws lambda invoke \
     --function-name stockbrief-dev-api \
-    --payload '{"stockbrief_operation":"check_ingestion_scheduler_enable_gate","providers":["OpenDART","NAVER_NEWS"],"tickers":["005930"],"limit":10}' \
+    --payload '{"stockbrief_operation":"check_ingestion_scheduler_enable_gate","providers":["OpenDART","NAVER_NEWS","KRX"],"tickers":["005930"],"limit":10}' \
     --cli-binary-format raw-in-base64-out \
     /tmp/stockbrief-scheduler-gate-response.json \
     --profile stockbrief-dev \
     --region ap-northeast-2
   ```
 
-- Both OpenDART and NAVER manual smoke runs have completed with understood
+- OpenDART, NAVER, and KRX manual smoke runs have completed with understood
   results. The scheduler gate treats each selected `provider + ticker` pair as
   ready only after `get_ingestion_status` shows a recent `succeeded` run for
   that pair. `partial_failed`, `failed`, `started`, or missing runs return the

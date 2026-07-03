@@ -736,7 +736,7 @@ def test_authenticated_bedrock_chat_persists_after_read_session_close(
                             {
                                 "text": (
                                     "삼성전자(005930)는 공개 데이터 기준 검토 대상입니다. "
-                                    "[ev_mock_005930_disclosure] 근거를 확인하세요."
+                                        "[ev_provider_005930_disclosure] 근거를 확인하세요."
                                 )
                             }
                         ]

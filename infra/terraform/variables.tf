@@ -391,8 +391,8 @@ variable "ingestion_schedule_provider" {
   default     = "OpenDART"
 
   validation {
-    condition     = contains(["OpenDART", "NAVER_NEWS"], var.ingestion_schedule_provider)
-    error_message = "ingestion_schedule_provider must be OpenDART or NAVER_NEWS."
+    condition     = contains(["OpenDART", "NAVER_NEWS", "KRX"], var.ingestion_schedule_provider)
+    error_message = "ingestion_schedule_provider must be OpenDART, NAVER_NEWS, or KRX."
   }
 }
 
@@ -413,9 +413,9 @@ variable "ingestion_schedule_jobs" {
 
   validation {
     condition = alltrue([
-      for job in var.ingestion_schedule_jobs : contains(["OpenDART", "NAVER_NEWS"], job.provider)
+      for job in var.ingestion_schedule_jobs : contains(["OpenDART", "NAVER_NEWS", "KRX"], job.provider)
     ])
-    error_message = "Each ingestion_schedule_jobs provider must be OpenDART or NAVER_NEWS."
+    error_message = "Each ingestion_schedule_jobs provider must be OpenDART, NAVER_NEWS, or KRX."
   }
 
   validation {

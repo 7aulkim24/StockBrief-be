@@ -13,7 +13,10 @@ SECRET_ENV_KEYS = {
     "OPENDART_API_KEY",
     "NAVER_CLIENT_ID",
     "NAVER_CLIENT_SECRET",
-    "KRX_DATA_PATH",
+    "KRX_API_KEY",
+    "KRX_API_KEY_HEADER",
+    "KRX_KOSPI_DAILY_URL",
+    "KRX_KOSDAQ_DAILY_URL",
 }
 
 
@@ -506,8 +509,13 @@ def test_external_api_secret_update_script_handles_secret_payload_safely() -> No
     assert "OPENDART_API_KEY" in script
     assert "NAVER_CLIENT_ID" in script
     assert "NAVER_CLIENT_SECRET" in script
+    assert "KRX_API_KEY" in script
+    assert "KRX_KOSPI_DAILY_URL" in script
+    assert "KRX_KOSDAQ_DAILY_URL" in script
     assert "--prompt" in script
     assert "prompt_secret OPENDART_API_KEY" in script
+    assert "prompt_secret KRX_API_KEY" in script
+    assert "prompt_secret KRX_DAILY_URL" not in script
     assert "read -r -s -p" in script
     assert "Missing required environment variables" in script
     assert "mktemp" in script
@@ -837,10 +845,11 @@ def test_terraform_readme_documents_external_api_secret_update_runbook() -> None
     assert "Do not use `get-secret-value`" in terraform_readme
     assert "aws lambda invoke" in terraform_readme
     assert '"stockbrief_operation": "check_provider_egress"' in terraform_readme
-    assert '"providers": ["OpenDART", "NAVER_NEWS"]' in terraform_readme
+    assert '"providers": ["OpenDART", "NAVER_NEWS", "KRX"]' in terraform_readme
     assert "does not send API keys or client secrets" in terraform_readme
     assert '"provider":"OpenDART"' in terraform_readme
     assert '"provider":"NAVER_NEWS"' in terraform_readme
+    assert '"provider":"KRX"' in terraform_readme
     assert '"source_date":"YYYY-MM-DD"' in terraform_readme
     assert "Replace `YYYY-MM-DD` with the business date you want to verify" in terraform_readme
     assert "missing_api_key" in terraform_readme

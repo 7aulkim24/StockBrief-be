@@ -42,21 +42,17 @@ def test_materializer_persists_factor_rank_snapshot_from_seeded_rows(
         .where(RiskSignal.ticker == "005930", RiskSignal.as_of_date == AS_OF_DATE)
     )
 
-    assert result["created"] == 1
-    assert result["updated"] == 0
+    assert result["created"] == 0
+    assert result["updated"] == 1
     assert result["score_version"] == SCORE_VERSION
     assert score.evidence_count == 2
     assert score.evidence_level == "medium"
     assert score.is_candidate_eligible is True
     assert len(score.component_scores) == 8
-    assert "growth.inputs" in score.missing_data
+    assert score.missing_data == []
     assert score.data_freshness["as_of"] == "2026-06-09"
     assert score.data_freshness["risk_penalty"] == 2.5
-    assert set(score.data_freshness["fallback_data"]) == {
-        "liquidity",
-        "momentum_volatility",
-        "valuation",
-    }
+    assert score.data_freshness["fallback_data"] == []
     assert reason_count == 3
     assert risk_count == 1
 

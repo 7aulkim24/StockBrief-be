@@ -373,6 +373,8 @@ def test_ingestion_pipeline_resources_are_wired_with_scheduler_disabled_by_defau
 
     assert 'variable "enable_ingestion_scheduler"' in variables_tf
     assert 'variable "ingestion_schedule_jobs"' in variables_tf
+    assert '"KRX"' in variables_tf
+    assert "ingestion_schedule_provider must be OpenDART, NAVER_NEWS, or KRX" in variables_tf
     assert "default     = false" in variables_tf
     assert "aws_s3_bucket\" \"ingestion_raw" in ingestion_tf
     assert "aws_kms_key\" \"ingestion_raw" in ingestion_tf

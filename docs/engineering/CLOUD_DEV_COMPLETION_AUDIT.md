@@ -7,7 +7,7 @@ implementation because those were owned by other teammates.
 Audit date: 2026-07-03
 AWS account: `560271561793`
 Region: `ap-northeast-2`
-Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`
+Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`, `#290`
 
 Do not paste API keys, access tokens, secret values, raw provider payloads, raw
 model answers, user emails, watchlist item bodies, or chat titles into PR
@@ -28,12 +28,12 @@ evidence. Use the redacted helper outputs and summarize only status fields.
 
 | Category | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Latest main baseline | 완료 | BE `main` is at `f156e4f` after BE #285; FE `main` is at `b103515` after FE #109. The latest hosted product smoke evidence remains the FE #118 search-page run. | Start all new BE work from latest `main`. |
+| Latest main baseline | 완료 | BE `main` is at `9a83c92` after BE #289; FE `main` is at `a7f1b9f` after FE #122. The latest hosted product smoke evidence remains the FE #118 search-page run, with FE #120 and FE #122 merged afterward. | Start all new BE work from latest `main`. |
 | Deploy profile source | 완료 | BE #252 made GitHub Environment `TFVARS_JSON` and `TF_BACKEND_CONFIG_HCL` the source of truth for `backend-dev-deploy`. | Keep runner-rendered tfvars/backend files out of the repository. |
 | Terraform apply | 완료 | `backend-dev-deploy` run `28560982229` applied NAT/scheduler resources for the live window; run `28561585744` deployed the #254 Lambda package; run `28574501920` applied the #275 cost pause. | Inspect the deploy run after every merge or Environment tfvars change. |
 | API Gateway and Lambda API | 완료 | `GET /v1/health` returned `status=ok`, `service=stockbrief-api`, `environment=dev`. | Continue using deployed smoke before release or after resume. |
 | Recommendation API | 완료 | `GET /v1/recommendations/candidates?limit=3` returned `count=3`, first ticker `005930`, evidence level `medium`, evidence count `42`. | Re-run deployed API smoke after recommendation, ingestion, or Lambda deploy changes. |
-| Recommendation quality | 완료 | `scripts/check_recommendation_quality_smoke.py --limit 3 --max-detail-tickers 3` returned `ok=true`; selected tickers `005930`, `207940`, `000660`; each detail returned 8 score components with weight sum `100`; blockers `[]`. | Re-run before product-flow work that changes candidate quality or evidence joins. |
+| Recommendation quality | 완료 | `scripts/check_recommendation_quality_smoke.py --limit 5 --max-detail-tickers 3 --expected-ticker 005930 --expected-ticker 207940 --expected-ticker 000660` returned `ok=true`; selected tickers `005930`, `207940`, `000660`; each detail returned 8 score components with weight sum `100`; blockers `[]`. | Re-run before product-flow work that changes candidate quality or evidence joins. |
 | Cognito | 완료 | Terraform outputs include user pool `ap-northeast-2_VPOccT5rI`, issuer, app client, and Hosted UI domain; BE #225 verified the full protected API smoke with a short-lived token. | Re-run full hosted auth smoke after Cognito, callback, account API, or Amplify domain changes. |
 | Amplify hosted pages | 완료 | Page-only hosted smoke for `/`, `/account`, and `/auth/callback` returned HTTP 200 at `https://main.d20hgo2k8atldu.amplifyapp.com`. | Re-run hosted page smoke after FE deploy or Amplify config changes. |
 | FE live evidence visibility | 완료 | FE hosted evidence/watchlist/auth/search-page smoke returned `ok=true` with `/`, `/stocks/005930`, `/search?q=삼성전자`, `/watchlist`, `/account`, and `/auth/callback` all HTTP 200 and no missing page markers. | Re-run after FE detail/recommendation/search/watchlist/account UI, auth callback, API base, or Amplify deploy changes. |
@@ -197,19 +197,25 @@ Evidence captured on 2026-07-02:
 
 ### Recommendation Quality Smoke
 
+The 2026-07-03 additional ticker smoke used this command:
+
 ```bash
 STOCKBRIEF_API_BASE_URL="https://hazfha7995.execute-api.ap-northeast-2.amazonaws.com" \
 uv run python scripts/check_recommendation_quality_smoke.py \
-  --limit 3 \
-  --max-detail-tickers 3
+  --limit 5 \
+  --max-detail-tickers 3 \
+  --expected-ticker 005930 \
+  --expected-ticker 207940 \
+  --expected-ticker 000660
 ```
 
-Evidence captured on 2026-07-02:
+Evidence captured on 2026-07-03:
 
 - `ok=true`
-- candidate list: target `/recommendations/candidates?limit=3`, count `3`,
-  first ticker `005930`, selected tickers `005930`, `207940`, `000660`, as-of
-  `2026-06-09`
+- candidate list: target `/recommendations/candidates?limit=5`, count `5`,
+  first ticker `005930`, expected tickers `005930`, `207940`, `000660`,
+  missing expected tickers `[]`, selected tickers `005930`, `207940`,
+  `000660`, as-of `2026-06-09`
 - candidate detail: targets `/recommendations/candidates/{ticker}`, evidence
   level `medium`, evidence counts `42`, `2`, and `22`, risk tag count `1`,
   missing data count `0`, reason count `1`
@@ -385,8 +391,9 @@ the current dev baseline:
    post-deploy smoke returned `scheduler_enable_ready=true`.
 6. FE #110 merged the recommendation candidate contract cleanup without changing
    runtime API behavior.
-7. Recommendation quality and hosted page auth smoke returned `ok=true` on
-   2026-07-02; FE hosted evidence/watchlist/auth/search-page smoke returned
+7. Recommendation quality with expected tickers `005930`, `207940`, and
+   `000660` returned `ok=true` on 2026-07-03; hosted page auth smoke returned
+   `ok=true` on 2026-07-02; FE hosted evidence/watchlist/auth/search-page smoke returned
    `ok=true` after FE #118 merged on 2026-07-03.
 8. NAT/scheduler cost posture is pause-first for the current dev baseline:
    both are disabled after BE #275, and reactivation requires a reviewed live
@@ -395,5 +402,4 @@ the current dev baseline:
 Candidate next product checks after those gates:
 
 - account watchlist/auth smoke with a short-lived token
-- recommendation candidate quality criteria for additional tickers
 - live evidence/watchlist visibility after future FE runtime UI changes merge

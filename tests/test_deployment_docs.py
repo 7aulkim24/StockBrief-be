@@ -322,18 +322,29 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     ).read_text(encoding="utf-8")
 
     assert "# Cloud Dev Completion Audit" in audit_doc
-    assert "Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`" in audit_doc
+    assert "Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`, `#290`" in audit_doc
     assert "FE-to-BE integration" in audit_doc
     assert "toolchain migration" in audit_doc
     assert "Other teammate" in audit_doc
     assert "완료" in audit_doc
 
-    assert "BE `main` is at `f156e4f` after BE #285" in audit_doc
-    assert "FE `main` is at `b103515` after FE #109" in audit_doc
+    assert "BE `main` is at `9a83c92` after BE #289" in audit_doc
+    assert "FE `main` is at `a7f1b9f` after FE #122" in audit_doc
     assert "latest hosted product smoke evidence remains the FE #118 search-page run" in audit_doc
+    assert "FE #120 and FE #122 merged afterward" in audit_doc
     assert "`GET /v1/health`" in audit_doc
     assert "`GET /v1/recommendations/candidates?limit=3`" in audit_doc
-    assert "scripts/check_recommendation_quality_smoke.py --limit 3 --max-detail-tickers 3" in audit_doc
+    assert "scripts/check_recommendation_quality_smoke.py --limit 5 --max-detail-tickers 3 --expected-ticker 005930 --expected-ticker 207940 --expected-ticker 000660" in audit_doc
+    recommendation_quality_section = _markdown_section(
+        audit_doc, "Recommendation Quality Smoke"
+    )
+    assert "The 2026-07-03 additional ticker smoke used this command:" in recommendation_quality_section
+    assert "Evidence captured on 2026-07-03:" in recommendation_quality_section
+    assert "--limit 5" in recommendation_quality_section
+    assert "--expected-ticker 005930" in recommendation_quality_section
+    assert "Evidence captured on 2026-07-02:" not in recommendation_quality_section
+    assert "`/recommendations/candidates?limit=5`, count `5`" in audit_doc
+    assert "missing expected tickers `[]`" in audit_doc
     assert "each detail returned 8 score components with weight sum `100`" in audit_doc
     assert "`POST /v1/chat`" in audit_doc
     assert "scripts/check_bedrock_chat_smoke.py" in audit_doc

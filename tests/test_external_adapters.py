@@ -372,8 +372,9 @@ def test_krx_success_uses_configured_endpoint_without_logging_secret(
     result = client.daily_trading(ticker="005930", base_date="20260609")
 
     assert result.data_status == "available"
-    assert result.payload["ticker"] == "005930"
     assert result.payload["base_date"] == "20260609"
+    assert result.payload["market"] == "KOSPI"
+    assert result.cache_key == "daily_trading:KOSPI:20260609"
     assert calls[0].url == "https://krx.example/daily"
     assert calls[0].params == {"basDd": "20260609"}
     assert calls[0].headers == {"X-KRX-KEY": "krx-secret"}
@@ -383,6 +384,50 @@ def test_krx_success_uses_configured_endpoint_without_logging_secret(
     ).all()
     assert logs
     assert "krx-secret" not in str([log.request_params for log in logs])
+
+
+def test_krx_daily_cache_is_market_date_scoped(
+    seeded_session: Session,
+) -> None:
+    calls: list[ExternalRequest] = []
+
+    def transport(request: ExternalRequest) -> ExternalResponse:
+        calls.append(request)
+        return ExternalResponse(
+            status_code=200,
+            payload={
+                "OutBlock_1": [
+                    {
+                        "BAS_DD": "20260609",
+                        "ISU_SRT_CD": "005930",
+                        "TDD_CLSPRC": "70,000",
+                    },
+                    {
+                        "BAS_DD": "20260609",
+                        "ISU_SRT_CD": "000660",
+                        "TDD_CLSPRC": "120,000",
+                    },
+                ]
+            },
+        )
+
+    client = KrxClient(
+        settings=Settings(
+            KRX_KOSPI_DAILY_URL="https://krx.example/kospi",
+            KRX_KOSDAQ_DAILY_URL="https://krx.example/kosdaq",
+            KRX_API_KEY="krx-secret",
+        ),
+        session=seeded_session,
+        transport=transport,
+    )
+
+    first = client.daily_trading(ticker="005930", base_date="20260609", market="KOSPI")
+    second = client.daily_trading(ticker="000660", base_date="20260609", market="KOSPI")
+
+    assert first.from_cache is False
+    assert second.from_cache is True
+    assert first.cache_key == second.cache_key == "daily_trading:KOSPI:20260609"
+    assert len(calls) == 1
 
 
 def test_krx_kosdaq_success_uses_market_specific_endpoint(

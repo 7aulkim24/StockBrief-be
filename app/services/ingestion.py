@@ -273,6 +273,18 @@ class ProviderIngestionService:
                         "missing_data": external_result.missing_data,
                     },
                 )
+            elif (
+                request.provider == KRX_PROVIDER
+                and result_counts["inserted"] + result_counts["updated"] == 0
+            ):
+                completed = self.idempotency.mark_partial_failed(
+                    run=run,
+                    result_counts=result_counts,
+                    error_summary={
+                        "code": "krx_price_rows_not_persisted",
+                        "result_counts": result_counts,
+                    },
+                )
             else:
                 completed = self.idempotency.mark_succeeded(
                     run=run,
@@ -1532,12 +1544,17 @@ def _normalize_krx_price_item(
 
 
 def _ticker_from_provider(item: dict[str, Any], *keys: str) -> str:
-    raw = _first_text(item, *keys)
-    if raw.startswith("A") and raw[1:].isdigit() and len(raw) <= 7:
-        return raw[1:].zfill(6)
-    if raw.isdigit() and len(raw) <= 6:
-        return raw.zfill(6)
-    return raw
+    first_raw = ""
+    for key in keys:
+        raw = _first_text(item, key)
+        if not raw:
+            continue
+        first_raw = first_raw or raw
+        if raw.startswith("A") and raw[1:].isdigit() and len(raw) <= 7:
+            return raw[1:].zfill(6)
+        if raw.isdigit() and len(raw) <= 6:
+            return raw.zfill(6)
+    return first_raw
 
 
 def _first_text(item: dict[str, Any], *keys: str) -> str:

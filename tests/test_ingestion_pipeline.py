@@ -786,6 +786,139 @@ def test_provider_fallback_marks_partial_failed_without_persisting_rows(
     assert result["results"][0]["error_summary"]["code"] == "provider_fallback"
 
 
+def test_krx_ingestion_uses_short_code_when_isu_cd_is_isin(
+    monkeypatch,
+    seeded_session: Session,
+) -> None:
+    def fake_daily_trading(self, *, ticker: str, base_date: str, market: str = "KOSPI"):
+        return ExternalApiResult(
+            provider=KRX_PROVIDER,
+            endpoint="/daily",
+            cache_key=f"krx:{ticker}:{base_date}",
+            data_status="available",
+            status_code=200,
+            payload={
+                "ticker": ticker,
+                "base_date": base_date,
+                "OutBlock_1": [
+                    {
+                        "BAS_DD": base_date,
+                        "ISU_CD": "KR7005930003",
+                        "ISU_SRT_CD": ticker,
+                        "TDD_CLSPRC": "71,000",
+                        "ACC_TRDVOL": "1,234,567",
+                        "ACC_TRDVAL": "87,654,321,000",
+                        "MKTCAP": "420,000,000,000,000",
+                        "FLUC_RT": "1.50",
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(
+        "app.services.ingestion.KrxClient.daily_trading",
+        fake_daily_trading,
+    )
+    service = ProviderIngestionService(
+        seeded_session,
+        settings=Settings(KRX_API_KEY="krx-secret"),
+        archiver=NoopPayloadArchiver(),
+    )
+
+    result = service.run_provider_batch(
+        ProviderIngestionRequest(
+            provider=KRX_PROVIDER,
+            tickers=["005930"],
+            source_date="2026-06-18",
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["results"][0]["status"] == "succeeded"
+    assert result["results"][0]["result_counts"] == {
+        "inserted": 1,
+        "updated": 0,
+        "skipped": 0,
+    }
+
+    price = seeded_session.scalars(
+        select(PriceMetric).where(
+            PriceMetric.ticker == "005930",
+            PriceMetric.trade_date == datetime(2026, 6, 18, tzinfo=timezone.utc).date(),
+        )
+    ).one()
+    assert price.close_price == 71000
+    assert price.source == KRX_PROVIDER
+
+
+def test_krx_ingestion_marks_partial_failed_when_no_price_rows_persist(
+    monkeypatch,
+    seeded_session: Session,
+) -> None:
+    def fake_daily_trading(self, *, ticker: str, base_date: str, market: str = "KOSPI"):
+        return ExternalApiResult(
+            provider=KRX_PROVIDER,
+            endpoint="/daily",
+            cache_key=f"krx:{ticker}:{base_date}",
+            data_status="available",
+            status_code=200,
+            payload={
+                "ticker": ticker,
+                "base_date": base_date,
+                "OutBlock_1": [
+                    {
+                        "BAS_DD": base_date,
+                        "ISU_CD": "KR7999990000",
+                        "ISU_SRT_CD": "999999",
+                        "TDD_CLSPRC": "1,000",
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(
+        "app.services.ingestion.KrxClient.daily_trading",
+        fake_daily_trading,
+    )
+    service = ProviderIngestionService(
+        seeded_session,
+        settings=Settings(KRX_API_KEY="krx-secret"),
+        archiver=NoopPayloadArchiver(),
+    )
+
+    result = service.run_provider_batch(
+        ProviderIngestionRequest(
+            provider=KRX_PROVIDER,
+            tickers=["005930"],
+            source_date="2026-06-18",
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["results"][0]["status"] == "partial_failed"
+    assert result["results"][0]["result_counts"] == {
+        "inserted": 0,
+        "updated": 0,
+        "skipped": 1,
+    }
+    assert result["results"][0]["error_summary"] == {
+        "code": "krx_price_rows_not_persisted",
+        "result_counts": {
+            "inserted": 0,
+            "updated": 0,
+            "skipped": 1,
+        },
+    }
+
+    run = seeded_session.scalars(
+        select(IngestionRun).where(
+            IngestionRun.provider == KRX_PROVIDER,
+            IngestionRun.target_scope["ticker"].as_string() == "005930",
+        )
+    ).one()
+    assert run.status == "partial_failed"
+
+
 def test_refresh_score_snapshots_uses_successful_krx_tickers_and_marks_partial_freshness(
     monkeypatch,
     seeded_session: Session,

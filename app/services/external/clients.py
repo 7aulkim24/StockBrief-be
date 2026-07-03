@@ -421,7 +421,8 @@ class KrxClient(BaseExternalApiClient):
     ) -> ExternalApiResult:
         market_key = _krx_market_key(market)
         endpoint = self._daily_endpoint(market_key)
-        cache_key = f"daily_trading:{market_key}:{ticker}:{base_date}"
+        cache_key = f"daily_trading:{market_key}:{base_date}"
+        fallback_cache_key = f"{cache_key}:{ticker}"
         cached = self._from_cache(
             provider=KRX_PROVIDER,
             endpoint=endpoint or f"missing_krx_{market_key.lower()}_daily_url",
@@ -433,7 +434,7 @@ class KrxClient(BaseExternalApiClient):
         if not endpoint:
             return self._fallback(
                 endpoint=f"missing_krx_{market_key.lower()}_daily_url",
-                cache_key=cache_key,
+                cache_key=fallback_cache_key,
                 ticker=ticker,
                 base_date=base_date,
                 market=market_key,
@@ -443,7 +444,7 @@ class KrxClient(BaseExternalApiClient):
         if not self.settings.krx_api_key:
             return self._fallback(
                 endpoint=endpoint,
-                cache_key=cache_key,
+                cache_key=fallback_cache_key,
                 ticker=ticker,
                 base_date=base_date,
                 market=market_key,
@@ -462,9 +463,8 @@ class KrxClient(BaseExternalApiClient):
                 headers={self.settings.krx_api_key_header: self.settings.krx_api_key},
                 timeout_seconds=self.rate_limit_policy.timeout_seconds,
             ),
-            request_params={"basDd": base_date, "ticker": ticker},
+            request_params={"basDd": base_date, "market": market_key},
             fallback_payload={
-                "ticker": ticker,
                 "base_date": base_date,
                 "market": market_key,
                 "OutBlock_1": [],
@@ -472,7 +472,6 @@ class KrxClient(BaseExternalApiClient):
             fallback_field="KRX daily trading response",
             normalize_payload=lambda payload: {
                 **payload,
-                "ticker": ticker,
                 "base_date": base_date,
                 "market": market_key,
             },

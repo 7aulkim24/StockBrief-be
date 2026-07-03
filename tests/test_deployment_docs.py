@@ -322,13 +322,13 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     ).read_text(encoding="utf-8")
 
     assert "# Cloud Dev Completion Audit" in audit_doc
-    assert "Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`, `#290`" in audit_doc
+    assert "Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`, `#290`, `#292`, `#293`" in audit_doc
     assert "FE-to-BE integration" in audit_doc
     assert "toolchain migration" in audit_doc
     assert "Other teammate" in audit_doc
     assert "완료" in audit_doc
 
-    assert "BE `main` is at `9a83c92` after BE #289" in audit_doc
+    assert "BE `main` is at `fc77136` after BE #291" in audit_doc
     assert "FE `main` is at `a7f1b9f` after FE #122" in audit_doc
     assert "latest hosted product smoke evidence remains the FE #118 search-page run" in audit_doc
     assert "FE #120 and FE #122 merged afterward" in audit_doc
@@ -350,6 +350,11 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     assert "scripts/check_bedrock_chat_smoke.py" in audit_doc
     assert "scripts/check_hosted_auth_smoke.py --skip-auth-api" in audit_doc
     assert "BE #225 captured a full hosted auth API smoke" in audit_doc
+    assert "BE #292 captured the current full hosted auth API smoke and watchlist write-cycle" in audit_doc
+    assert "watchlist write-cycle: created, updated, deleted, and cleanup confirmed" in audit_doc
+    assert "the temporary token file and user tracking file were removed" in audit_doc
+    assert "the Cognito app client auth flows were restored" in audit_doc
+    assert "the Cognito user pool user count was `0` after cleanup" in audit_doc
     assert "the temporary Cognito smoke user was deleted after the run" in audit_doc
     assert "pnpm run smoke:hosted-evidence --" in audit_doc
     assert "--search-query 삼성전자" in audit_doc
@@ -364,6 +369,8 @@ def test_cloud_dev_completion_audit_documents_current_scope_and_smokes() -> None
     assert "`/account`: HTTP 200, account heading" in audit_doc
     assert "`/auth/callback`: HTTP 200, callback heading" in audit_doc
     assert "evidence/watchlist/auth/search-page smoke returned" in audit_doc
+    assert "BE #292 verified the current full hosted auth API smoke and watchlist" in audit_doc
+    assert "account watchlist/auth smoke with a short-lived token" not in audit_doc
     assert "scripts/check_ingestion_smoke.py" in audit_doc
     assert "matched_terms=[]" in audit_doc
     assert "ready_for_manual_ingestion=true" in audit_doc

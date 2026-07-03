@@ -7,7 +7,7 @@ implementation because those were owned by other teammates.
 Audit date: 2026-07-03
 AWS account: `560271561793`
 Region: `ap-northeast-2`
-Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`, `#290`
+Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`, `#290`, `#292`, `#293`
 
 Do not paste API keys, access tokens, secret values, raw provider payloads, raw
 model answers, user emails, watchlist item bodies, or chat titles into PR
@@ -28,13 +28,13 @@ evidence. Use the redacted helper outputs and summarize only status fields.
 
 | Category | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Latest main baseline | 완료 | BE `main` is at `9a83c92` after BE #289; FE `main` is at `a7f1b9f` after FE #122. The latest hosted product smoke evidence remains the FE #118 search-page run, with FE #120 and FE #122 merged afterward. | Start all new BE work from latest `main`. |
+| Latest main baseline | 완료 | BE `main` is at `fc77136` after BE #291; FE `main` is at `a7f1b9f` after FE #122. The latest hosted product smoke evidence remains the FE #118 search-page run, with FE #120 and FE #122 merged afterward. | Start all new BE work from latest `main`. |
 | Deploy profile source | 완료 | BE #252 made GitHub Environment `TFVARS_JSON` and `TF_BACKEND_CONFIG_HCL` the source of truth for `backend-dev-deploy`. | Keep runner-rendered tfvars/backend files out of the repository. |
 | Terraform apply | 완료 | `backend-dev-deploy` run `28560982229` applied NAT/scheduler resources for the live window; run `28561585744` deployed the #254 Lambda package; run `28574501920` applied the #275 cost pause. | Inspect the deploy run after every merge or Environment tfvars change. |
 | API Gateway and Lambda API | 완료 | `GET /v1/health` returned `status=ok`, `service=stockbrief-api`, `environment=dev`. | Continue using deployed smoke before release or after resume. |
 | Recommendation API | 완료 | `GET /v1/recommendations/candidates?limit=3` returned `count=3`, first ticker `005930`, evidence level `medium`, evidence count `42`. | Re-run deployed API smoke after recommendation, ingestion, or Lambda deploy changes. |
 | Recommendation quality | 완료 | `scripts/check_recommendation_quality_smoke.py --limit 5 --max-detail-tickers 3 --expected-ticker 005930 --expected-ticker 207940 --expected-ticker 000660` returned `ok=true`; selected tickers `005930`, `207940`, `000660`; each detail returned 8 score components with weight sum `100`; blockers `[]`. | Re-run before product-flow work that changes candidate quality or evidence joins. |
-| Cognito | 완료 | Terraform outputs include user pool `ap-northeast-2_VPOccT5rI`, issuer, app client, and Hosted UI domain; BE #225 verified the full protected API smoke with a short-lived token. | Re-run full hosted auth smoke after Cognito, callback, account API, or Amplify domain changes. |
+| Cognito | 완료 | Terraform outputs include user pool `ap-northeast-2_VPOccT5rI`, issuer, app client, and Hosted UI domain; BE #225 verified the full protected API smoke, and BE #292 verified the full protected API plus watchlist write-cycle with a temporary Cognito smoke user. | Re-run full hosted auth smoke after Cognito, callback, account API, or Amplify domain changes. |
 | Amplify hosted pages | 완료 | Page-only hosted smoke for `/`, `/account`, and `/auth/callback` returned HTTP 200 at `https://main.d20hgo2k8atldu.amplifyapp.com`. | Re-run hosted page smoke after FE deploy or Amplify config changes. |
 | FE live evidence visibility | 완료 | FE hosted evidence/watchlist/auth/search-page smoke returned `ok=true` with `/`, `/stocks/005930`, `/search?q=삼성전자`, `/watchlist`, `/account`, and `/auth/callback` all HTTP 200 and no missing page markers. | Re-run after FE detail/recommendation/search/watchlist/account UI, auth callback, API base, or Amplify deploy changes. |
 | RDS | 완료 | `stockbrief-dev-postgres` is available, PostgreSQL `16.13`, deletion protection `false`, backup retention `1`. | Stop RDS during inactive cost windows per `DEPLOYMENT_BOOTSTRAP.md`. |
@@ -267,6 +267,22 @@ was updated to accept both wrapped and top-level protected API response shapes:
 - `blockers=[]`
 - the temporary Cognito smoke user was deleted after the run
 
+BE #292 captured the current full hosted auth API smoke and watchlist write-cycle
+on 2026-07-03:
+
+- hosted pages `/`, `/account`, and `/auth/callback`: HTTP 200
+- `/v1/me`: authenticated summary passed, email present, email verified
+- `/v1/me/preferences`: preference summary passed
+- `/v1/me/watchlist`: item count summary passed
+- `/v1/me/chat-sessions`: session count summary passed
+- watchlist write-cycle: created, updated, deleted, and cleanup confirmed
+- `blockers=[]`
+- the temporary Cognito smoke user was deleted after the run
+- the temporary token file and user tracking file were removed
+- the Cognito app client auth flows were restored to
+  `ALLOW_REFRESH_TOKEN_AUTH` and `ALLOW_USER_SRP_AUTH`
+- the Cognito user pool user count was `0` after cleanup
+
 Only paste the redacted JSON result. Never paste the bearer token, email,
 token file path, watchlist item body, chat title, or raw protected API response
 body. Delete the temporary token file after the smoke finishes.
@@ -398,8 +414,10 @@ the current dev baseline:
 8. NAT/scheduler cost posture is pause-first for the current dev baseline:
    both are disabled after BE #275, and reactivation requires a reviewed live
    provider ingestion window.
+9. BE #292 verified the current full hosted auth API smoke and watchlist
+   write-cycle on 2026-07-03, then deleted the temporary Cognito smoke user and
+   token file.
 
 Candidate next product checks after those gates:
 
-- account watchlist/auth smoke with a short-lived token
 - live evidence/watchlist visibility after future FE runtime UI changes merge

@@ -53,6 +53,10 @@ def test_ingestion_operations_runbook_exists_and_covers_manual_smoke() -> None:
     assert "former NAT Gateway `nat-06de3faa3d9831ce4`" in runbook
     assert "scheduler gate pass again" in runbook
     assert "The scheduler change is reviewed in a separate PR" in runbook
+    assert "uv run pytest tests/test_ingestion_pipeline.py" in runbook
+    assert "uv run pytest tests/test_external_adapters.py" in runbook
+    assert "uv run pytest tests/test_recommendation_materializer.py" in runbook
+    assert "rtk uv run" not in runbook
     assert '"stockbrief_operation":"check_ingestion_scheduler_enable_gate"' in runbook
     assert "scheduler_enable_ready=true" in runbook
     assert "Replace `YYYY-MM-DD`" in runbook

@@ -114,9 +114,9 @@ payloads into PR comments, shared logs, or issue comments.
 Run these commands from `StockBrief-be` before requesting AWS dev smoke:
 
 ```bash
-rtk uv run pytest tests/test_ingestion_pipeline.py
-rtk uv run pytest tests/test_external_adapters.py
-rtk uv run pytest tests/test_recommendation_materializer.py
+uv run pytest tests/test_ingestion_pipeline.py
+uv run pytest tests/test_external_adapters.py
+uv run pytest tests/test_recommendation_materializer.py
 ```
 
 The mocked KRX path does not require live credentials. The local tests patch the

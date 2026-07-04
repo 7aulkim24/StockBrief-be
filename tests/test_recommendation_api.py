@@ -186,7 +186,7 @@ def test_get_recommendation_candidate_detail(
     assert candidate["risk_tags"]
 
 
-def test_candidate_api_reads_latest_score_snapshot(
+def test_candidate_api_defaults_to_current_score_version(
     seeded_api_client: TestClient,
     seeded_session: Session,
 ) -> None:
@@ -229,15 +229,14 @@ def test_candidate_api_reads_latest_score_snapshot(
 
     assert detail_response.status_code == 200
     detail = detail_response.json()
-    assert detail["recommendation_score"] == 12.34
-    assert detail["missing_data"] == ["selection.inputs"]
-    assert detail["data_freshness"]["as_of"] == "2026-06-10"
+    assert detail["recommendation_score"] == float(current.total_score)
+    assert detail["data_freshness"]["as_of"] == current.data_freshness["as_of"]
 
     assert list_response.status_code == 200
     items = list_response.json()["items"]
     selected = [item for item in items if item["ticker"] == "005930"]
     assert len(selected) == 1
-    assert selected[0]["recommendation_score"] == 12.34
+    assert selected[0]["recommendation_score"] == float(current.total_score)
 
 
 def test_candidate_service_prefers_requested_score_version(

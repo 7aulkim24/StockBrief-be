@@ -1,9 +1,16 @@
-from datetime import date
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.orm import RecommendationReason, RecommendationScore, RiskSignal
+from app.orm import (
+    EvidenceChunk,
+    RecommendationReason,
+    RecommendationScore,
+    RiskSignal,
+    SourceDocument,
+)
 from app.services.recommendation.engine import SCORE_VERSION
 from app.services.recommendation.materializer import materialize_recommendation_scores
 
@@ -96,3 +103,60 @@ def test_materializer_rerun_does_not_duplicate_score_rows(
     assert score_count == 1
     assert reason_count == 3
     assert risk_count == 1
+
+
+def test_materializer_ignores_legacy_mock_evidence_rows(
+    seeded_session: Session,
+) -> None:
+    fetched_at = datetime(2026, 6, 8, 9, 0, tzinfo=timezone.utc)
+    source = SourceDocument(
+        ticker="005930",
+        source_type="news",
+        source_name="NAVER_NEWS",
+        source_url="https://news.example.com/legacy-mock",
+        external_id="legacy-mock-news",
+        title="legacy mock evidence",
+        published_at=fetched_at,
+        fetched_at=fetched_at,
+        raw_content="legacy mock content",
+        metadata_={"provider": "NAVER_NEWS"},
+    )
+    seeded_session.add(source)
+    seeded_session.flush()
+    seeded_session.add(
+        EvidenceChunk(
+            evidence_id="ev_mock_005930_news",
+            ticker="005930",
+            source_document_id=source.id,
+            evidence_type="news_attention",
+            chunk_text="legacy mock evidence should not be scored",
+            source_url=source.source_url,
+            published_at=fetched_at,
+            fetched_at=fetched_at,
+            confidence=Decimal("0.9900"),
+            metadata_={"provider": "NAVER_NEWS"},
+        )
+    )
+    seeded_session.commit()
+
+    materialize_recommendation_scores(
+        seeded_session,
+        as_of_date=AS_OF_DATE,
+        tickers=["005930"],
+    )
+
+    score = _factor_score(seeded_session)
+    reasons = seeded_session.scalars(
+        select(RecommendationReason).where(
+            RecommendationReason.recommendation_score_id == score.id
+        )
+    ).all()
+    component_evidence = [
+        evidence_id
+        for component in score.component_scores
+        for evidence_id in component.get("evidence_ids", [])
+    ]
+    reason_evidence = [evidence_id for reason in reasons for evidence_id in reason.evidence_ids]
+
+    assert "ev_mock_005930_news" not in component_evidence
+    assert "ev_mock_005930_news" not in reason_evidence

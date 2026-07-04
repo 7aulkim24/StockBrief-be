@@ -143,6 +143,7 @@ def _evidence(
         .where(
             EvidenceChunk.ticker == ticker,
             EvidenceChunk.fetched_at <= cutoff,
+            EvidenceChunk.evidence_id.not_like("ev_mock_%"),
         )
         .order_by(EvidenceChunk.fetched_at.desc(), EvidenceChunk.evidence_id.asc())
     ).all()

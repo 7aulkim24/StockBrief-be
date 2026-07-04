@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -1450,6 +1451,25 @@ def test_check_provider_egress_treats_http_error_as_reachable() -> None:
             "endpoint": "https://opendart.fss.or.kr/api/list.json",
             "status_code": 403,
             "note": "Provider endpoint returned an HTTP error response.",
+        }
+    }
+
+
+def test_check_provider_egress_treats_non_json_response_as_reachable() -> None:
+    def fake_transport(_request: ExternalRequest) -> ExternalResponse:
+        raise json.JSONDecodeError("Expecting value", "<html>", 0)
+
+    result = check_provider_egress({"provider": OPENDART_PROVIDER}, transport=fake_transport)
+
+    assert result["ok"] is True
+    assert result["issues"] == []
+    assert result["checks"]["providers"] == {
+        OPENDART_PROVIDER: {
+            "reachable": True,
+            "endpoint": "https://opendart.fss.or.kr/api/list.json",
+            "status_code": None,
+            "error_code": "JSONDecodeError",
+            "note": "Provider endpoint returned a non-JSON HTTP response.",
         }
     }
 

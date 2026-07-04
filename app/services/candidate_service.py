@@ -32,6 +32,7 @@ from app.orm import (
     Stock,
 )
 from app.services.response_helpers import pagination
+from app.services.recommendation.engine import SCORE_VERSION
 from app.ticker import validate_ticker
 
 logger = logging.getLogger(__name__)
@@ -401,6 +402,7 @@ class CandidateService:
         ]
 
     def _selected_scores_subquery(self, score_version: str | None):
+        selected_score_version = score_version or SCORE_VERSION
         statement = select(
             RecommendationScore.id.label("score_id"),
             func.row_number()
@@ -414,8 +416,7 @@ class CandidateService:
             )
             .label("score_rank"),
         )
-        if score_version:
-            statement = statement.where(RecommendationScore.score_version == score_version)
+        statement = statement.where(RecommendationScore.score_version == selected_score_version)
         return statement.subquery()
 
     def _candidate_responses(

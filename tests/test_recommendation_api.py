@@ -7,7 +7,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, event, select
 from sqlalchemy.orm import Session
 
-from app.orm import EvidenceChunk, RecommendationScore, RiskSignal, SourceDocument
+from app.orm import (
+    EvidenceChunk,
+    RecommendationReason,
+    RecommendationScore,
+    RiskSignal,
+    SourceDocument,
+)
 from app.services.candidate_service import CandidateService
 from app.services.recommendation.materializer import materialize_recommendation_scores
 
@@ -373,6 +379,23 @@ def test_recommendation_and_evidence_api_hide_legacy_mock_evidence(
         select(RecommendationScore).where(RecommendationScore.ticker == "005930")
     ).one()
     score.evidence_count = 1
+    component_scores = [dict(component) for component in score.component_scores]
+    component_scores[0] = {
+        **component_scores[0],
+        "evidence_ids": ["ev_mock_005930_news_api", "ev_live_news_005930"],
+    }
+    score.component_scores = component_scores
+    seeded_session.add(
+        RecommendationReason(
+            reason_id="rsn_005930_legacy_mock_api",
+            recommendation_score_id=score.id,
+            ticker="005930",
+            component="news_attention",
+            summary="legacy mock references should stay hidden",
+            evidence_ids=["ev_mock_005930_news_api", "ev_live_news_005930"],
+            source_document_ids=[str(mock_source.id), "live-source"],
+        )
+    )
     seeded_session.commit()
 
     candidate_response = seeded_api_client.get("/v1/recommendations/candidates/005930")
@@ -385,6 +408,8 @@ def test_recommendation_and_evidence_api_hide_legacy_mock_evidence(
     candidate = candidate_response.json()
     assert candidate["evidence_count"] == live_count
     assert candidate["data_freshness"]["live_evidence_latest_at"] == published_at.isoformat()
+    assert "ev_mock_005930_news_api" not in _flatten_text(candidate)
+    assert "ev_live_news_005930" in _flatten_text(candidate)
 
     assert evidence_response.status_code == 200
     evidence_ids = [item["id"] for item in evidence_response.json()["data"]["items"]]

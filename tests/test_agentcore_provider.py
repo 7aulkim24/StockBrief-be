@@ -268,6 +268,8 @@ def test_agentcore_runtime_dev_invocation_records_tool_trace(
     payload = response.json()
     trace = payload["response"]["trace"]
     assert payload["status"] == "success"
+    assert trace["model_provider"] == "dev"
+    assert trace["model_id"] == "stockbrief-dev-tool-model"
     assert "get_candidate" in trace["selected_tools"]
     assert trace["tool_calls"][0]["status"] == "success"
     assert trace["citation_ids"] == baseline.used_evidence_ids

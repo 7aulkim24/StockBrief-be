@@ -43,8 +43,8 @@ def _tfvars(**overrides):
         "agentcore_runtime_container_uri": IMAGE_URI,
         "agentcore_network_mode": "PUBLIC",
         "bedrock_chat_region": "",
-        "bedrock_chat_model_id": "apac.amazon.nova-micro-v1:0",
-        "bedrock_chat_max_tokens": 2000,
+        "bedrock_chat_model_id": "apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "bedrock_chat_max_tokens": 1000,
         "bedrock_chat_temperature": 0.2,
         "bedrock_chat_timeout_seconds": 8,
         "agentcore_runtime_max_turns": 4,
@@ -140,8 +140,8 @@ def test_agentcore_runtime_environment_matches_tfvars() -> None:
             "environment": "dev-owen",
             "aws_region": "ap-northeast-2",
             "bedrock_chat_region": "",
-            "bedrock_chat_model_id": "apac.amazon.nova-micro-v1:0",
-            "bedrock_chat_max_tokens": 2000,
+            "bedrock_chat_model_id": "apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "bedrock_chat_max_tokens": 1000,
             "bedrock_chat_temperature": 0.2,
             "bedrock_chat_timeout_seconds": 8,
             "agentcore_runtime_max_turns": 4,
@@ -150,8 +150,9 @@ def test_agentcore_runtime_environment_matches_tfvars() -> None:
 
     assert env["APP_ENV"] == "dev-owen"
     assert env["SERVICE_NAME"] == "stockbrief-agent"
+    assert env["BEDROCK_CHAT_MODEL_ID"] == "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
     assert env["BEDROCK_CHAT_REGION"] == "ap-northeast-2"
-    assert env["BEDROCK_CHAT_MAX_TOKENS"] == "2000"
+    assert env["BEDROCK_CHAT_MAX_TOKENS"] == "1000"
     assert env["AGENTCORE_RUNTIME_USE_DEV_MODEL"] == "false"
 
 
@@ -228,6 +229,7 @@ def test_deploy_runtime_creates_runtime_and_endpoint_with_expected_payload() -> 
         "runtime_id": RUNTIME_ID,
         "endpoint_name": ENDPOINT_NAME,
         "image_uri": IMAGE_URI,
+        "model_id": "apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
         "version": "1",
     }
 
@@ -294,4 +296,5 @@ def test_deploy_runtime_updates_existing_runtime_and_endpoint() -> None:
 
     assert metadata["runtime_id"] == RUNTIME_ID
     assert metadata["endpoint_name"] == ENDPOINT_NAME
+    assert metadata["model_id"] == "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
     assert metadata["version"] == "2"

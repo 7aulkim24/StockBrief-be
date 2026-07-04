@@ -722,7 +722,7 @@ not call external AI services. To validate the direct Bedrock provider, set:
 
 ```hcl
 chat_provider         = "bedrock"
-bedrock_chat_model_id = "apac.amazon.nova-micro-v1:0"
+bedrock_chat_model_id = "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
 bedrock_chat_region   = "" # empty uses aws_region
 ```
 
@@ -737,7 +737,7 @@ For inference profile IDs, the Lambda policy is split into two statements:
 - the associated foundation model ARNs can be invoked only when the request
   context includes the configured `bedrock:InferenceProfileArn`.
 
-The default `apac.amazon.nova-micro-v1:0` profile currently routes to
+The default `apac.anthropic.claude-3-5-sonnet-20241022-v2:0` profile currently routes to
 `ap-southeast-2`, `ap-northeast-1`, `ap-south-1`, `ap-northeast-2`,
 `ap-southeast-1`, and `ap-northeast-3`. If you change
 `bedrock_chat_model_id` to another inference profile, update
@@ -749,19 +749,20 @@ AWS profile routing list and IAM examples. Keep the provider on `mock` unless
 Bedrock model access, expected request volume, and cost are approved for the
 day's validation.
 
-The current dev profile has Bedrock direct chat enabled for issues #201/#202
-using `apac.amazon.nova-micro-v1:0` in `ap-northeast-2`. Post-merge direct
-Bedrock smoke evidence after #204 returned `ok=true`, `answer_length=44`,
-`answer_sha256_prefix=246e9a43b265`, and `matched_terms=[]`; keep the profile
-on Bedrock only while this model access and cost approval remain valid.
+The reviewed Claude baseline for direct Bedrock and AgentCore validation is
+`apac.anthropic.claude-3-5-sonnet-20241022-v2:0` in `ap-northeast-2`. Keep the
+profile on `mock` or the prior approved model until the target account has
+completed the Anthropic use-case access step and the redacted direct smoke below
+returns `ok=true`.
 
-Before switching the deployed API to `chat_provider = "bedrock"`, verify that
-the active AWS account can invoke the selected Bedrock model:
+Before switching the deployed API to `chat_provider = "bedrock"` or deploying an
+AgentCore Runtime with this Claude model, verify that the active AWS account can
+invoke the selected Bedrock model:
 
 ```bash
 uv run python scripts/check_bedrock_chat_smoke.py \
   --region ap-northeast-2 \
-  --model-id apac.amazon.nova-micro-v1:0
+  --model-id apac.anthropic.claude-3-5-sonnet-20241022-v2:0
 ```
 
 The smoke command prints a redacted JSON result with `ok`, `answer_length`,

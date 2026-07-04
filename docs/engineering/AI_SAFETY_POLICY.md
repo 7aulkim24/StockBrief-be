@@ -172,12 +172,13 @@ Provider configuration:
   `unsafe_output_block`. Unsafe output logs must not include the raw model
   answer; use answer length, a short SHA-256 prefix, matched guard terms, and the
   `likely_false_positive` flag for operations triage.
-- Current dev status: after #202/#204, the deployed dev API runs the direct
-  Bedrock provider with `apac.amazon.nova-micro-v1:0`. The post-merge
-  validation path includes `scripts/check_bedrock_chat_smoke.py` plus
-  `scripts/check_deployed_chat_smoke.py`, and it must still prove that response
-  shape, policy status, disclaimer, and citation IDs stay within the existing
-  contract without printing raw model answers.
+- Current Claude target: direct Bedrock and AgentCore validation use
+  `apac.anthropic.claude-3-5-sonnet-20241022-v2:0` only after the target AWS
+  account has completed Anthropic use-case access and
+  `scripts/check_bedrock_chat_smoke.py` returns `ok=true`. The post-access
+  validation path also includes `scripts/check_deployed_chat_smoke.py`, and it
+  must still prove that response shape, policy status, disclaimer, and citation
+  IDs stay within the existing contract without printing raw model answers.
 - `CHAT_PROVIDER=agentcore` is a dev-only AgentCore Runtime path. It may be
   selected only when a dev Runtime target is configured with
   `AGENTCORE_RUNTIME_URL` or `AGENTCORE_RUNTIME_ARN`; missing targets, Runtime

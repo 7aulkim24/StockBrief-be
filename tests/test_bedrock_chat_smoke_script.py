@@ -31,7 +31,7 @@ def test_bedrock_smoke_redacts_answer_and_reports_hash() -> None:
     client = FakeBedrockClient("정상 응답입니다.")
 
     result = smoke.run_smoke(
-        model_id="apac.amazon.nova-micro-v1:0",
+        model_id="apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
         region="ap-northeast-2",
         prompt="smoke",
         timeout_seconds=1,
@@ -45,12 +45,12 @@ def test_bedrock_smoke_redacts_answer_and_reports_hash() -> None:
     assert payload["answer_length"] == len("정상 응답입니다.")
     assert payload["answer_sha256_prefix"]
     assert "정상 응답입니다." not in str(payload)
-    assert client.calls[0]["modelId"] == "apac.amazon.nova-micro-v1:0"
+    assert client.calls[0]["modelId"] == "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
 
 
 def test_bedrock_smoke_blocks_guard_terms_without_raw_answer() -> None:
     result = smoke.run_smoke(
-        model_id="apac.amazon.nova-micro-v1:0",
+        model_id="apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
         region="ap-northeast-2",
         prompt="smoke",
         timeout_seconds=1,

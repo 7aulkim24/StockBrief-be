@@ -409,15 +409,16 @@ Resume checklist:
 
 Current dev resume baseline:
 
-- The active dev profile currently uses `chat_provider = "bedrock"` with
-  `apac.amazon.nova-micro-v1:0`. After a resume that touches Lambda, IAM, or
-  Bedrock settings, run the redacted direct smoke and deployed `/v1/chat` smoke
-  before treating AI explanation work as healthy.
+- The reviewed Claude target for direct Bedrock and AgentCore validation is
+  `apac.anthropic.claude-3-5-sonnet-20241022-v2:0`. Do not treat a live Claude
+  switch as healthy until the target AWS account has completed Anthropic
+  use-case access, the redacted direct smoke returns `ok=true`, and the deployed
+  `/v1/chat` smoke preserves the existing contract.
 
   ```bash
   uv run python scripts/check_bedrock_chat_smoke.py \
     --region ap-northeast-2 \
-    --model-id apac.amazon.nova-micro-v1:0
+    --model-id apac.anthropic.claude-3-5-sonnet-20241022-v2:0
 
   STOCKBRIEF_API_BASE_URL="https://hazfha7995.execute-api.ap-northeast-2.amazonaws.com" \
   uv run python scripts/check_deployed_chat_smoke.py --ticker 005930

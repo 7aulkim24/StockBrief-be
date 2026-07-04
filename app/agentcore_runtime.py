@@ -187,6 +187,12 @@ async def invoke_agent(request: InvocationRequest) -> InvocationResponse:
     answer = str(result).strip()
     metrics_summary = _metrics_summary(result)
     response_trace = {
+        "model_provider": "dev" if settings.agentcore_runtime_use_dev_model else "bedrock",
+        "model_id": (
+            "stockbrief-dev-tool-model"
+            if settings.agentcore_runtime_use_dev_model
+            else settings.bedrock_chat_model_id
+        ),
         "selected_tools": trace.selected_tools,
         "tool_calls": trace.tool_calls,
         "tool_errors": sum(1 for call in trace.tool_calls if call["status"] == "error"),
@@ -412,7 +418,9 @@ def _log_runtime_trace(trace: dict[str, Any]) -> None:
         .get("accumulated_usage", {})
     )
     logger.info(
-        "agentcore_runtime_trace selected_tools=%s tool_errors=%s citation_ids=%s policy_status=%s token_usage=%s",
+        "agentcore_runtime_trace model_provider=%s model_id=%s selected_tools=%s tool_errors=%s citation_ids=%s policy_status=%s token_usage=%s",
+        trace.get("model_provider", ""),
+        trace.get("model_id", ""),
         ",".join(trace["selected_tools"]),
         trace["tool_errors"],
         ",".join(trace["citation_ids"]),

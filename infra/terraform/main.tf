@@ -220,15 +220,19 @@ module "rds_proxy" {
 module "agentcore_runtime" {
   source = "./modules/agentcore_runtime"
 
-  name_prefix        = local.name_prefix
-  account_id         = data.aws_caller_identity.current.account_id
-  aws_region         = var.aws_region
-  enabled            = var.agentcore_runtime_enabled
-  container_uri      = var.agentcore_runtime_container_uri
-  network_mode       = var.agentcore_network_mode
-  subnet_ids         = var.lambda_subnet_ids
-  security_group_ids = local.effective_lambda_security_group_ids
-  log_retention_days = var.agentcore_runtime_log_retention_days
+  name_prefix                = local.name_prefix
+  account_id                 = data.aws_caller_identity.current.account_id
+  aws_region                 = var.aws_region
+  enabled                    = var.agentcore_runtime_enabled
+  container_uri              = var.agentcore_runtime_container_uri
+  external_runtime_arn       = var.agentcore_runtime_external_arn
+  external_runtime_id        = var.agentcore_runtime_external_id
+  external_endpoint_name     = var.agentcore_runtime_endpoint_name
+  manage_with_cloudformation = var.agentcore_runtime_manage_with_cloudformation
+  network_mode               = var.agentcore_network_mode
+  subnet_ids                 = var.lambda_subnet_ids
+  security_group_ids         = local.effective_lambda_security_group_ids
+  log_retention_days         = var.agentcore_runtime_log_retention_days
   bedrock_chat_foundation_model_arns = (
     var.agentcore_runtime_enabled ? local.effective_bedrock_chat_foundation_model_arns : []
   )
@@ -270,7 +274,7 @@ module "api_lambda" {
   ingestion_raw_kms_key_arn = try(aws_kms_key.ingestion_raw[0].arn, "")
   agentcore_runtime_arn     = module.agentcore_runtime.runtime_arn
   agentcore_runtime_invoke_enabled = (
-    var.agentcore_runtime_enabled && var.agentcore_runtime_container_uri != ""
+    var.agentcore_runtime_external_arn != "" || var.agentcore_runtime_manage_with_cloudformation
   )
   bedrock_chat_foundation_model_arns = (
     var.chat_provider == "bedrock" ? local.effective_bedrock_chat_foundation_model_arns : []

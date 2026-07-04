@@ -57,18 +57,25 @@ jobs:
           TF_BACKEND_CONFIG: ${{ steps.deploy-profile.outputs.tf_backend_config }}
         run: scripts/verify_deploy_account_matches_backend.sh
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Hydrate AgentCore Runtime metadata
+        run: >-
+          uv run python scripts/deploy_agentcore_runtime.py
+          --hydrate-only
+          --var-file "${{ env.TF_DIR }}/${{ steps.deploy-profile.outputs.tf_var_file }}"
+          --region "${{ env.AWS_REGION }}"
+
       - name: Check AgentCore Runtime readiness
         run: >-
           scripts/check_agentcore_runtime_preflight.sh
           --terraform-dir "${{ env.TF_DIR }}"
           --var-file "${{ steps.deploy-profile.outputs.tf_var_file }}"
           --region "${{ env.AWS_REGION }}"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
-
-      - name: Set up Python
-        run: uv python install 3.13
 
       - name: Build Lambda package
         run: ./scripts/package_api_lambda.sh
@@ -96,6 +103,30 @@ jobs:
       - name: Terraform apply
         if: github.event_name == 'push' || inputs.apply == true
         run: terraform apply -input=false -auto-approve tfplan
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Direct deploy AgentCore Runtime
+        if: github.event_name == 'push' || inputs.apply == true
+        run: |
+          runtime_role_arn="$(terraform -chdir="${TF_DIR}" output -raw agentcore_runtime_role_arn)"
+          uv run python scripts/deploy_agentcore_runtime.py \
+            --var-file "${TF_DIR}/${{ steps.deploy-profile.outputs.tf_var_file }}" \
+            --region "${AWS_REGION}" \
+            --role-arn "$runtime_role_arn"
+
+      - name: Terraform plan after AgentCore direct deploy
+        if: github.event_name == 'push' || inputs.apply == true
+        run: >-
+          terraform plan
+          -input=false
+          -var-file="${{ steps.deploy-profile.outputs.tf_var_file }}"
+          -var='operational_alarm_email_addresses=${{ vars.OPERATIONAL_ALARM_EMAILS_JSON }}'
+          -out=tfplan-after-agentcore
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform apply after AgentCore direct deploy
+        if: github.event_name == 'push' || inputs.apply == true
+        run: terraform apply -input=false -auto-approve tfplan-after-agentcore
         working-directory: ${{ env.TF_DIR }}
 
       - name: Skip Terraform apply

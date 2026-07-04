@@ -51,7 +51,13 @@
   "lambda_nat_route_subnet_ids": [],
   "agentcore_runtime_enabled": false,
   "agentcore_runtime_container_uri": "",
+  "agentcore_runtime_external_arn": "",
+  "agentcore_runtime_external_id": "",
+  "agentcore_runtime_endpoint_name": "",
+  "agentcore_runtime_manage_with_cloudformation": false,
   "agentcore_network_mode": "PUBLIC",
+  "agentcore_runtime_timeout_seconds": 30,
+  "bedrock_chat_max_tokens": 2000,
   "enable_ingestion_scheduler": false,
   "ingestion_schedule_jobs": []
 }

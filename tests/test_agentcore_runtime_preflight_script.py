@@ -76,7 +76,7 @@ def test_agentcore_preflight_skips_when_runtime_disabled(tmp_path: Path) -> None
     assert not log_path.exists()
 
 
-def test_agentcore_preflight_checks_cloudformation_resource_types(tmp_path: Path) -> None:
+def test_agentcore_preflight_checks_configured_ecr_image(tmp_path: Path) -> None:
     terraform_dir = tmp_path / "terraform"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -108,9 +108,9 @@ def test_agentcore_preflight_checks_cloudformation_resource_types(tmp_path: Path
     assert result.returncode == 0
     assert "AgentCore Runtime preflight passed" in result.stdout
     calls = log_path.read_text(encoding="utf-8")
-    assert "cloudformation describe-type" in calls
-    assert "AWS::BedrockAgentCore::Runtime" in calls
-    assert "AWS::BedrockAgentCore::RuntimeEndpoint" in calls
+    assert "ecr describe-images" in calls
+    assert "--repository-name stockbrief-agent" in calls
+    assert "imageTag=test" in calls
 
 
 def test_agentcore_preflight_fails_with_actionable_message(tmp_path: Path) -> None:
@@ -142,6 +142,6 @@ def test_agentcore_preflight_fails_with_actionable_message(tmp_path: Path) -> No
     )
 
     assert result.returncode == 1
-    assert "AgentCore Runtime preflight failed for AWS::BedrockAgentCore::Runtime" in result.stderr
-    assert "Confirm that the target account/region supports AgentCore Runtime" in result.stderr
+    assert "AgentCore Runtime preflight failed for stockbrief-agent" in result.stderr
+    assert "Push the AgentCore image first" in result.stderr
     assert "AccessDenied: simulated AgentCore type denial" in result.stderr

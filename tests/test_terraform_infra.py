@@ -208,23 +208,32 @@ def test_dev_scheduler_preserves_reviewed_reactivation_inputs_while_paused() -> 
     assert "Classify those drift items before apply" in terraform_readme
 
 
-def test_agentcore_runtime_module_uses_cloudformation_resources() -> None:
+def test_agentcore_runtime_module_supports_direct_deploy_external_runtime() -> None:
     agentcore_tf = _read("modules/agentcore_runtime/main.tf")
+    agentcore_outputs_tf = _read("modules/agentcore_runtime/outputs.tf")
     root_main_tf = _read("main.tf")
+    root_outputs_tf = _read("outputs.tf")
     terraform_readme = _read("README.md")
 
     assert "AWS::BedrockAgentCore::Runtime" in agentcore_tf
     assert "AWS::BedrockAgentCore::RuntimeEndpoint" in agentcore_tf
+    assert "manage_runtime = local.enabled && var.manage_with_cloudformation" in agentcore_tf
+    assert "prevent_destroy = true" in agentcore_tf
+    assert "external_runtime_arn" in agentcore_tf
+    assert "local.effective_runtime_arn" in agentcore_outputs_tf
+    assert 'output "runtime_role_arn"' in agentcore_outputs_tf
+    assert 'variable "agentcore_runtime_external_arn"' in _read("variables.tf")
+    assert 'variable "agentcore_runtime_manage_with_cloudformation"' in _read("variables.tf")
+    assert "external_runtime_arn       = var.agentcore_runtime_external_arn" in root_main_tf
+    assert 'output "agentcore_runtime_role_arn"' in root_outputs_tf
     assert 'variable = "aws:SourceAccount"' in agentcore_tf
     assert 'variable = "aws:SourceArn"' in agentcore_tf
     assert "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:*" in agentcore_tf
     assert "/aws/bedrock-agentcore/runtimes/${local.runtime_name}" in agentcore_tf
     assert "agentcore_runtime_container_uri" in root_main_tf
     assert "scripts/check_agentcore_runtime_preflight.sh" in terraform_readme
-    assert "CloudFormation" in terraform_readme
-    assert "`AWS::BedrockAgentCore::RuntimeEndpoint`" in terraform_readme
-    assert "create-time control-plane" in terraform_readme
-    assert "AccessDenied" in terraform_readme
+    assert "scripts/deploy_agentcore_runtime.py" in terraform_readme
+    assert "direct deploy" in terraform_readme
 
 
 def test_api_gateway_stage_has_access_logs() -> None:
@@ -260,8 +269,7 @@ def test_api_lambda_role_has_vpc_and_agentcore_invoke_permissions() -> None:
     assert 'variable "agentcore_runtime_invoke_enabled"' in api_lambda_variables_tf
     assert "count = var.agentcore_runtime_invoke_enabled ? 1 : 0" in api_lambda_tf
     assert 'count = var.agentcore_runtime_arn == "" ? 0 : 1' not in api_lambda_tf
-    assert "agentcore_runtime_invoke_enabled = (" in root_main_tf
-    assert 'var.agentcore_runtime_container_uri != ""' in root_main_tf
+    assert "var.agentcore_runtime_external_arn != \"\" || var.agentcore_runtime_manage_with_cloudformation" in root_main_tf
     assert "security_group_ids = local.effective_lambda_security_group_ids" in root_main_tf
 
 

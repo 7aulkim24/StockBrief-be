@@ -6,6 +6,7 @@ cors_allowed_origins    = "http://localhost:3000,http://127.0.0.1:3000"
 chat_provider           = "mock"
 bedrock_chat_model_id   = "apac.amazon.nova-micro-v1:0"
 bedrock_chat_region     = ""
+bedrock_chat_max_tokens = 2000
 bedrock_chat_inference_profile_foundation_model_regions = [
   "ap-southeast-2",
   "ap-northeast-1",
@@ -50,8 +51,12 @@ operational_alarm_email_addresses = []
 
 agentcore_runtime_enabled       = false
 agentcore_runtime_container_uri = ""
+agentcore_runtime_external_arn  = ""
+agentcore_runtime_external_id   = ""
+agentcore_runtime_endpoint_name = ""
+agentcore_runtime_manage_with_cloudformation = false
 agentcore_network_mode          = "PUBLIC"
-agentcore_runtime_timeout_seconds = 8
+agentcore_runtime_timeout_seconds = 30
 agentcore_runtime_max_turns       = 4
 agentcore_runtime_qualifier       = "DEFAULT"
 agentcore_runtime_log_retention_days = 14

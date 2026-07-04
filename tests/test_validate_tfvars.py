@@ -64,6 +64,50 @@ def test_rejects_agentcore_chat_without_runtime_enabled() -> None:
     assert "chat_provider=agentcore requires a non-empty agentcore_runtime_container_uri" in message
 
 
+def test_rejects_partial_agentcore_external_runtime_metadata() -> None:
+    with pytest.raises(TfvarsValidationError) as exc_info:
+        _load(
+            _tfvars(
+                agentcore_runtime_enabled=True,
+                agentcore_runtime_container_uri="123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/stockbrief-agent:test",
+                agentcore_runtime_external_arn="arn:aws:bedrock-agentcore:ap-northeast-2:123456789012:runtime/example",
+            )
+        )
+
+    assert "agentcore_runtime_external_arn and agentcore_runtime_external_id" in _messages(exc_info)
+
+
+def test_rejects_disabled_agentcore_with_stale_external_runtime_metadata() -> None:
+    with pytest.raises(TfvarsValidationError) as exc_info:
+        _load(
+            _tfvars(
+                agentcore_runtime_enabled=False,
+                agentcore_runtime_external_arn="arn:aws:bedrock-agentcore:ap-northeast-2:123456789012:runtime/example",
+                agentcore_runtime_external_id="stockbrief_dev_owen_agent-ABCDEFGHIJ",
+                agentcore_runtime_endpoint_name="stockbrief_dev_owen_default",
+            )
+        )
+
+    assert "AgentCore external runtime metadata requires agentcore_runtime_enabled=true" in _messages(
+        exc_info
+    )
+
+
+def test_rejects_endpoint_name_without_external_runtime_identity() -> None:
+    with pytest.raises(TfvarsValidationError) as exc_info:
+        _load(
+            _tfvars(
+                agentcore_runtime_enabled=True,
+                agentcore_runtime_container_uri="123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/stockbrief-agent:test",
+                agentcore_runtime_endpoint_name="stockbrief_dev_owen_default",
+            )
+        )
+
+    assert "agentcore_runtime_endpoint_name requires agentcore_runtime_external_arn" in _messages(
+        exc_info
+    )
+
+
 def test_rejects_vpc_agentcore_without_networking_or_security_groups() -> None:
     with pytest.raises(TfvarsValidationError) as exc_info:
         _load(_tfvars(agentcore_network_mode="VPC"))

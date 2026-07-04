@@ -11,7 +11,7 @@ This directory prepares the MVP deployment direction for AWS. It is a skeleton, 
 - Auth: AWS Cognito User Pool with email-based signup/login and API Gateway JWT authorizer.
 - Logs: CloudWatch log groups.
 - Ingestion: S3 raw provider archive, SQS DLQ, and optional EventBridge Scheduler.
-- Agent: optional Amazon Bedrock AgentCore Runtime CloudFormation stack, enabled after an ECR agent image exists.
+- Agent: optional Amazon Bedrock AgentCore Runtime direct deploy, enabled after an ECR agent image exists.
 - IaC: Terraform modules with `dev`, `staging`, and `prod` variable examples.
 
 MVP deployment priority is `dev`. `staging` and `prod` are documented through example tfvars only.
@@ -25,6 +25,7 @@ infra/terraform
 │   ├── staging/terraform.tfvars.example
 │   └── prod/terraform.tfvars.example
 ├── modules/
+│   ├── agentcore_runtime/
 │   ├── amplify/
 │   ├── api_lambda/
 │   ├── cloudwatch/
@@ -666,13 +667,21 @@ Enable it after the `StockBriefAgent` image exists:
 ```hcl
 agentcore_runtime_enabled       = true
 agentcore_runtime_container_uri = "<account>.dkr.ecr.<region>.amazonaws.com/stockbrief-agent:<tag>"
+agentcore_runtime_external_arn  = "" # filled from SSM/direct deploy
+agentcore_runtime_external_id   = "" # filled from SSM/direct deploy
+agentcore_runtime_endpoint_name = "" # filled from SSM/direct deploy
+agentcore_runtime_manage_with_cloudformation = false
 agentcore_network_mode          = "PUBLIC"
 ```
 
-The module creates an IAM runtime role and a CloudFormation stack containing:
+Terraform creates the IAM runtime role and log group. The runtime and endpoint
+are created or updated by `scripts/deploy_agentcore_runtime.py` through the
+Bedrock AgentCore control-plane API, then the script writes SSM metadata under
+`/stockbrief/<target-env>/agentcore/*` and patches the runner tfvars file with:
 
-- `AWS::BedrockAgentCore::Runtime`
-- `AWS::BedrockAgentCore::RuntimeEndpoint`
+- `agentcore_runtime_external_arn`
+- `agentcore_runtime_external_id`
+- `agentcore_runtime_endpoint_name`
 
 The API Lambda role receives `bedrock-agentcore:InvokeAgentRuntime` only when
 the runtime ARN exists. `backend-dev-deploy` runs the repository preflight before
@@ -686,12 +695,25 @@ scripts/check_agentcore_runtime_preflight.sh \
 ```
 
 The preflight is a no-op when `agentcore_runtime_enabled=false`. When it is
-enabled, the check confirms that the deploy role can read the CloudFormation
-resource types `AWS::BedrockAgentCore::Runtime` and
-`AWS::BedrockAgentCore::RuntimeEndpoint` in the target region. It does not create
-AgentCore resources and it does not prove every create-time control-plane
-permission; an apply-time `AWS::BedrockAgentCore::Runtime` AccessDenied still
-requires account/region AgentCore readiness and deploy role permission review.
+enabled, the check confirms that the configured ECR image exists and is readable
+by the deploy role. On apply, the workflow:
+
+1. hydrates existing runtime metadata from SSM when present;
+2. applies the base Terraform plan to create/update Lambda, IAM, logs, and data
+   resources;
+3. runs `scripts/deploy_agentcore_runtime.py` with the Terraform-created runtime
+   role ARN;
+4. re-plans and re-applies Terraform so Lambda env and invoke policy reference
+   the direct-deployed runtime ARN.
+
+The module still contains a legacy CloudFormation fallback for state
+compatibility behind `agentcore_runtime_manage_with_cloudformation=true`, but
+the reviewed GitHub Actions path keeps that false and does not create
+`AWS::BedrockAgentCore::Runtime` or
+`AWS::BedrockAgentCore::RuntimeEndpoint`. The fallback stack has
+`prevent_destroy=true`; if an old environment has that stack in Terraform state,
+review and remove state deliberately instead of letting a direct-deploy migration
+delete it.
 
 ## Direct Bedrock Chat Provider
 
@@ -1063,7 +1085,11 @@ one team member's `target_env` against another team member's AWS account.
 When building `TFVARS_JSON`, keep `amplify_cognito_redirect_uri` empty for the
 console-managed Amplify flow unless Terraform creates Amplify for that
 environment. Keep `agentcore_runtime_container_uri` empty unless
-`agentcore_runtime_enabled` is true and an AgentCore ECR image URI is ready. If
+`agentcore_runtime_enabled` is true and an AgentCore ECR image URI is ready.
+Leave `agentcore_runtime_external_arn`, `agentcore_runtime_external_id`, and
+`agentcore_runtime_endpoint_name` empty for first deploy; the workflow hydrates
+them from SSM when a runtime already exists and patches the runner tfvars after
+direct deploy. If
 `chat_provider` is `bedrock` or `agentcore` and `lambda_subnet_ids` attaches the
 API Lambda to private subnets, either enable Terraform-managed NAT egress with
 `enable_lambda_nat_egress=true` and reviewed NAT subnet IDs, set
@@ -1072,8 +1098,15 @@ CIDR, or keep the NAT subnet IDs recorded in `TFVARS_JSON` so the existing
 route-table egress can be reviewed before apply.
 
 The workflow builds `dist/stockbrief-api-lambda.zip`, initializes Terraform with
-the selected S3 backend config, plans with the selected tfvars file, and applies
-the plan to the chosen profile.
+the selected S3 backend config, plans with the selected tfvars file, applies the
+base plan, direct-deploys AgentCore when enabled, then applies a second plan with
+the direct runtime metadata. SSM metadata must contain
+`runtime_arn`, `runtime_id`, and `endpoint_name` together; partial metadata fails
+fast during hydrate so a previous interrupted deploy does not silently produce a
+half-wired Lambda. If hydrate fails on incomplete metadata, verify the
+AgentCore Runtime and endpoint in the AWS control plane, then rewrite all three
+SSM parameters from the verified values or remove the stale set under a reviewed
+cleanup before rerunning `backend-dev-deploy`.
 
 `AWS_DEV_DEPLOY_ROLE_ARN` remains supported for the default `dev` profile only.
 For rotating team accounts, use explicit Environment variables such as
@@ -1088,4 +1121,4 @@ before every apply.
 - RDS resources are guarded by `subnet_ids`; empty subnet lists skip RDS creation in skeleton planning.
 - This skeleton does not run migrations automatically. Use `StockBrief-be` Alembic commands after DB connectivity is confirmed.
 - Cognito Hosted UI domain prefix must be globally unique when enabled.
-- AgentCore Runtime creation requires a valid container image URI and regional AgentCore/Bedrock model access.
+- AgentCore Runtime direct deploy requires a valid container image URI, regional AgentCore/Bedrock model access, and deploy-role permissions for Bedrock AgentCore control-plane plus SSM metadata writes.

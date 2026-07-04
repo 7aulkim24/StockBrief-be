@@ -1,7 +1,19 @@
 locals {
-  enabled       = var.enabled && var.container_uri != ""
-  runtime_name  = replace("${var.name_prefix}_agent", "-", "_")
-  endpoint_name = replace("${var.name_prefix}_default", "-", "_")
+  enabled        = var.enabled && var.container_uri != ""
+  manage_runtime = local.enabled && var.manage_with_cloudformation
+  runtime_name   = replace("${var.name_prefix}_agent", "-", "_")
+  endpoint_name  = replace("${var.name_prefix}_default", "-", "_")
+  effective_runtime_arn = (
+    var.external_runtime_arn != "" ? var.external_runtime_arn : try(aws_cloudformation_stack.runtime[0].outputs.RuntimeArn, "")
+  )
+  effective_runtime_id = (
+    var.external_runtime_id != "" ? var.external_runtime_id : try(aws_cloudformation_stack.runtime[0].outputs.RuntimeId, "")
+  )
+  effective_endpoint_name = (
+    var.external_endpoint_name != "" ? var.external_endpoint_name : (
+      local.manage_runtime ? try(aws_cloudformation_stack.runtime[0].outputs.RuntimeEndpointName, "") : local.endpoint_name
+    )
+  )
 
   network_configuration = merge(
     {
@@ -161,10 +173,14 @@ resource "aws_iam_role_policy" "runtime" {
 }
 
 resource "aws_cloudformation_stack" "runtime" {
-  count = local.enabled ? 1 : 0
+  count = local.manage_runtime ? 1 : 0
 
   name         = "${var.name_prefix}-agentcore-runtime"
   capabilities = ["CAPABILITY_NAMED_IAM"]
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   template_body = yamlencode({
     AWSTemplateFormatVersion = "2010-09-09"

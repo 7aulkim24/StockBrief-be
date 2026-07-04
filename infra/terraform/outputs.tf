@@ -91,3 +91,13 @@ output "agentcore_runtime_endpoint_name" {
   description = "AgentCore Runtime default endpoint name when enabled."
   value       = module.agentcore_runtime.runtime_endpoint_name
 }
+
+output "agentcore_runtime_id" {
+  description = "AgentCore Runtime ID when direct deploy or Terraform-managed runtime is enabled."
+  value       = module.agentcore_runtime.runtime_id
+}
+
+output "agentcore_runtime_role_arn" {
+  description = "IAM role ARN used by the AgentCore Runtime."
+  value       = module.agentcore_runtime.runtime_role_arn
+}

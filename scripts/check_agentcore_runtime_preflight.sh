@@ -9,7 +9,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/check_agentcore_runtime_preflight.sh --var-file PATH [--terraform-dir DIR] [--region REGION]
 
-Checks AgentCore Runtime CloudFormation type readiness before Terraform apply.
+Checks AgentCore Runtime direct deploy prerequisites before Terraform apply.
 The check is a no-op when agentcore_runtime_enabled is false.
 USAGE
 }
@@ -56,6 +56,7 @@ agentcore_state="$(
   python3 - "$tfvars_path" <<'PY'
 import json
 import sys
+import re
 from pathlib import Path
 
 tfvars = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
@@ -67,7 +68,22 @@ if not enabled:
 elif not container_uri:
     print("missing-container-uri")
 else:
-    print("enabled")
+    match = re.fullmatch(
+        r"(?P<registry>[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com)/"
+        r"(?P<repository>[^:@]+)(?::(?P<tag>[^:@]+))?(?:@(?P<digest>sha256:[0-9a-f]+))?",
+        container_uri,
+    )
+    if not match or not (match.group("tag") or match.group("digest")):
+        print("invalid-container-uri")
+    else:
+        print(
+            "enabled\t"
+            + match.group("repository")
+            + "\t"
+            + (match.group("tag") or "")
+            + "\t"
+            + (match.group("digest") or "")
+        )
 PY
 )"
 
@@ -80,33 +96,42 @@ case "$agentcore_state" in
     echo "AgentCore Runtime preflight failed: agentcore_runtime_enabled=true requires agentcore_runtime_container_uri." >&2
     exit 1
     ;;
-  enabled)
+  invalid-container-uri)
+    echo "AgentCore Runtime preflight failed: agentcore_runtime_container_uri must be an ECR image URI." >&2
+    exit 1
+    ;;
+  enabled$'\t'*)
+    repository="$(printf '%s' "$agentcore_state" | cut -f2)"
+    tag="$(printf '%s' "$agentcore_state" | cut -f3)"
+    digest="$(printf '%s' "$agentcore_state" | cut -f4)"
+    image_id_args=()
+    if [ -n "$digest" ]; then
+      image_id_args=(imageDigest="$digest")
+    else
+      image_id_args=(imageTag="$tag")
+    fi
+    if ! output="$(
+      aws ecr describe-images \
+        --repository-name "$repository" \
+        --image-ids "${image_id_args[@]}" \
+        --region "$region" 2>&1
+    )"; then
+      cat >&2 <<ERROR
+AgentCore Runtime preflight failed for ${repository}.
+
+The deploy role could not read the configured ECR image in ${region}.
+Push the AgentCore image first and confirm the repository/tag in TFVARS_JSON.
+
+AWS CLI output:
+${output}
+ERROR
+      exit 1
+    fi
+    echo "AgentCore Runtime preflight passed: ECR image is readable in ${region}."
+    exit 0
     ;;
   *)
     echo "Unexpected AgentCore Runtime preflight state: ${agentcore_state}" >&2
     exit 1
     ;;
 esac
-
-for type_name in AWS::BedrockAgentCore::Runtime AWS::BedrockAgentCore::RuntimeEndpoint; do
-  if ! output="$(
-    aws cloudformation describe-type \
-      --region "$region" \
-      --type RESOURCE \
-      --type-name "$type_name" 2>&1
-  )"; then
-    cat >&2 <<ERROR
-AgentCore Runtime preflight failed for ${type_name}.
-
-The deploy role could not read the CloudFormation resource type in ${region}.
-Confirm that the target account/region supports AgentCore Runtime and that the
-deploy role can access the CloudFormation type before running Terraform apply.
-
-AWS CLI output:
-${output}
-ERROR
-    exit 1
-  fi
-done
-
-echo "AgentCore Runtime preflight passed: CloudFormation AgentCore resource types are readable in ${region}."

@@ -326,6 +326,30 @@ variable "agentcore_runtime_container_uri" {
   default     = ""
 }
 
+variable "agentcore_runtime_external_arn" {
+  description = "Existing AgentCore Runtime ARN managed by direct deploy outside Terraform."
+  type        = string
+  default     = ""
+}
+
+variable "agentcore_runtime_external_id" {
+  description = "Existing AgentCore Runtime ID managed by direct deploy outside Terraform."
+  type        = string
+  default     = ""
+}
+
+variable "agentcore_runtime_endpoint_name" {
+  description = "AgentCore Runtime endpoint name managed by direct deploy outside Terraform."
+  type        = string
+  default     = ""
+}
+
+variable "agentcore_runtime_manage_with_cloudformation" {
+  description = "Legacy fallback to create AgentCore Runtime resources through CloudFormation. Keep false for the reviewed direct deploy path."
+  type        = bool
+  default     = false
+}
+
 variable "agentcore_network_mode" {
   description = "AgentCore Runtime network mode. Use PUBLIC for the first PoC, VPC when private data access is required."
   type        = string

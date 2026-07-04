@@ -1,11 +1,15 @@
 output "runtime_arn" {
-  value = try(aws_cloudformation_stack.runtime[0].outputs.RuntimeArn, "")
+  value = local.effective_runtime_arn
 }
 
 output "runtime_id" {
-  value = try(aws_cloudformation_stack.runtime[0].outputs.RuntimeId, "")
+  value = local.effective_runtime_id
 }
 
 output "runtime_endpoint_name" {
-  value = try(aws_cloudformation_stack.runtime[0].outputs.RuntimeEndpointName, "")
+  value = local.effective_endpoint_name
+}
+
+output "runtime_role_arn" {
+  value = try(aws_iam_role.runtime[0].arn, "")
 }

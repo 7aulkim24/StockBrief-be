@@ -51,6 +51,9 @@ def validate_semantic_tfvars(tfvars: dict[str, Any]) -> list[str]:
     chat_provider = tfvars.get("chat_provider", "mock")
     agentcore_enabled = bool(tfvars.get("agentcore_runtime_enabled", False))
     agentcore_container_uri = str(tfvars.get("agentcore_runtime_container_uri", "")).strip()
+    agentcore_external_arn = str(tfvars.get("agentcore_runtime_external_arn", "")).strip()
+    agentcore_external_id = str(tfvars.get("agentcore_runtime_external_id", "")).strip()
+    agentcore_endpoint_name = str(tfvars.get("agentcore_runtime_endpoint_name", "")).strip()
     lambda_subnet_ids = _list_value(tfvars, "lambda_subnet_ids")
     lambda_nat_route_subnet_ids = _list_value(tfvars, "lambda_nat_route_subnet_ids")
     nat_public_subnet_id = str(tfvars.get("lambda_nat_public_subnet_id", "")).strip()
@@ -66,6 +69,21 @@ def validate_semantic_tfvars(tfvars: dict[str, Any]) -> list[str]:
         errors.append("chat_provider=agentcore requires agentcore_runtime_enabled=true.")
     if chat_provider == "agentcore" and not agentcore_container_uri:
         errors.append("chat_provider=agentcore requires a non-empty agentcore_runtime_container_uri.")
+    if not agentcore_enabled and (
+        agentcore_external_arn or agentcore_external_id or agentcore_endpoint_name
+    ):
+        errors.append(
+            "AgentCore external runtime metadata requires agentcore_runtime_enabled=true."
+        )
+    if bool(agentcore_external_arn) != bool(agentcore_external_id):
+        errors.append(
+            "agentcore_runtime_external_arn and agentcore_runtime_external_id must be set together."
+        )
+    if agentcore_endpoint_name and not (agentcore_external_arn and agentcore_external_id):
+        errors.append(
+            "agentcore_runtime_endpoint_name requires agentcore_runtime_external_arn "
+            "and agentcore_runtime_external_id."
+        )
     if tfvars.get("agentcore_network_mode", "PUBLIC") == "VPC":
         managed_networking = (
             bool(tfvars.get("vpc_id"))

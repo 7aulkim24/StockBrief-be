@@ -385,6 +385,39 @@ cat >"${tmpdir}/deploy-policy.json" <<POLICY
       }
     },
     {
+      "Sid": "DeployAgentCoreRuntimeDirect",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock-agentcore:CreateAgentRuntime",
+        "bedrock-agentcore:CreateAgentRuntimeEndpoint",
+        "bedrock-agentcore:GetAgentRuntime",
+        "bedrock-agentcore:GetAgentRuntimeEndpoint",
+        "bedrock-agentcore:ListAgentRuntimeEndpoints",
+        "bedrock-agentcore:ListAgentRuntimes",
+        "bedrock-agentcore:UpdateAgentRuntime",
+        "bedrock-agentcore:UpdateAgentRuntimeEndpoint"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DeployAgentCoreMetadata",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParametersByPath",
+        "ssm:PutParameter"
+      ],
+      "Resource": "arn:aws:ssm:${region}:${account_id}:parameter/stockbrief/${environment}/agentcore/*"
+    },
+    {
+      "Sid": "DeployAgentCoreImageRead",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:DescribeImages"
+      ],
+      "Resource": "arn:aws:ecr:${region}:${account_id}:repository/stockbrief-*"
+    },
+    {
       "Sid": "DeployRdsServiceLinkedRole",
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",
@@ -807,7 +840,12 @@ profile = {
     "lambda_nat_route_subnet_ids": [],
     "agentcore_runtime_enabled": False,
     "agentcore_runtime_container_uri": "",
+    "agentcore_runtime_external_arn": "",
+    "agentcore_runtime_external_id": "",
+    "agentcore_runtime_endpoint_name": "",
     "agentcore_network_mode": "PUBLIC",
+    "agentcore_runtime_timeout_seconds": 30,
+    "bedrock_chat_max_tokens": 2000,
     "enable_ingestion_scheduler": False,
     "ingestion_schedule_jobs": [],
 }

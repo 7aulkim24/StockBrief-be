@@ -20,6 +20,26 @@ variable "container_uri" {
   default = ""
 }
 
+variable "external_runtime_arn" {
+  type    = string
+  default = ""
+}
+
+variable "external_runtime_id" {
+  type    = string
+  default = ""
+}
+
+variable "external_endpoint_name" {
+  type    = string
+  default = ""
+}
+
+variable "manage_with_cloudformation" {
+  type    = bool
+  default = false
+}
+
 variable "network_mode" {
   type    = string
   default = "PUBLIC"

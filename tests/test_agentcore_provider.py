@@ -10,10 +10,7 @@ from app.main import app
 from app.services.candidate_service import CandidateService
 from app.services.chat import ChatProviderInput, ChatProviderUnavailable, compose_chat_answer
 from app.services.chat.providers import chat_provider_for
-from app.services.chat.runtime_provider import (
-    AgentCoreChatProvider,
-    _agentcore_allowed_evidence_ids,
-)
+from app.services.chat.runtime_provider import AgentCoreChatProvider
 from app.services.evidence_service import EvidenceService
 
 
@@ -105,7 +102,7 @@ def test_agentcore_provider_rechecks_runtime_answer(
     )
 
 
-def test_agentcore_allowed_evidence_ids_include_candidate_and_evidence_context(
+def test_agentcore_provider_blocks_context_citation_not_returned_to_client(
     seeded_session: Session,
 ) -> None:
     request = _provider_input(seeded_session)
@@ -114,15 +111,26 @@ def test_agentcore_allowed_evidence_ids_include_candidate_and_evidence_context(
         candidate=request.candidate,
         evidence=request.evidence,
     )
+    returned_ids = set(baseline.used_evidence_ids)
+    extra_evidence_id = next(
+        item.id for item in request.evidence if item.id not in returned_ids
+    )
+    provider = AgentCoreChatProvider(
+        runtime_url="http://runtime.local",
+        runtime_invoker=lambda payload: {
+            "status": "success",
+            "response": {
+                "answer": f"후보 context의 추가 근거를 인용했습니다. [{extra_evidence_id}]",
+                "trace": {
+                    "selected_tools": ["get_candidate"],
+                    "citation_ids": [extra_evidence_id],
+                },
+            },
+        },
+    )
 
-    allowed_ids = _agentcore_allowed_evidence_ids(request=request, baseline=baseline)
-
-    assert set(baseline.used_evidence_ids) <= allowed_ids
-    assert {item.id for item in request.evidence} <= allowed_ids
-    for component in request.candidate.score_components:
-        assert set(component.evidence_ids) <= allowed_ids
-    for reason in request.candidate.recommendation_reasons:
-        assert set(reason.evidence_ids) <= allowed_ids
+    with pytest.raises(ChatProviderUnavailable, match="invalid citations"):
+        provider.compose(request)
 
 
 def test_agentcore_provider_blocks_unsafe_runtime_answer(

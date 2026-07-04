@@ -122,10 +122,7 @@ class AgentCoreChatProvider:
         try:
             _validate_answer_citations(
                 answer=answer,
-                allowed_evidence_ids=_agentcore_allowed_evidence_ids(
-                    request=request,
-                    baseline=baseline,
-                ),
+                allowed_evidence_ids=set(baseline.used_evidence_ids),
             )
         except ChatProviderUnavailable as exc:
             _log_agentcore_guard_failure(
@@ -252,20 +249,6 @@ def _agentcore_runtime_payload(
             "baseline": baseline.model_dump(mode="json"),
         }
     }
-
-
-def _agentcore_allowed_evidence_ids(
-    *,
-    request: ChatProviderInput,
-    baseline: ChatResponse,
-) -> set[str]:
-    evidence_ids = set(baseline.used_evidence_ids)
-    evidence_ids.update(item.id for item in request.evidence)
-    for component in request.candidate.score_components:
-        evidence_ids.update(component.evidence_ids)
-    for reason in request.candidate.recommendation_reasons:
-        evidence_ids.update(reason.evidence_ids)
-    return evidence_ids
 
 
 def _agentcore_runtime_session_id(payload: dict[str, Any]) -> str:

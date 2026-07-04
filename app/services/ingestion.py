@@ -1044,37 +1044,49 @@ def check_provider_egress(
     base_settings = settings or get_settings()
 
     for provider in selected_providers:
-        endpoint = _provider_egress_endpoint(provider, base_settings)
-        if not endpoint:
-            checks[provider] = {
-                "reachable": False,
-                "endpoint": None,
-                "status_code": None,
-                "error_code": "missing_provider_endpoint",
-                "note": "Provider endpoint is not configured.",
-            }
-            issues.append(
-                {
-                    "code": "missing_provider_endpoint",
-                    "provider": provider,
-                    "field": "KRX_DAILY_URL/KRX_KOSPI_DAILY_URL",
+        targets = _provider_egress_targets(provider, base_settings)
+        target_checks: dict[str, dict[str, Any]] = {}
+        for target in targets:
+            label = target["label"]
+            endpoint = target["endpoint"]
+            if not endpoint:
+                target_checks[label] = {
+                    "reachable": False,
+                    "endpoint": None,
+                    "status_code": None,
+                    "error_code": "missing_provider_endpoint",
+                    "note": "Provider endpoint is not configured.",
                 }
+                issues.append(
+                    {
+                        "code": "missing_provider_endpoint",
+                        "provider": provider,
+                        "field": target["field"],
+                    }
+                )
+                continue
+            check = _check_provider_endpoint_egress(
+                provider=provider,
+                endpoint=endpoint,
+                transport=transport_fn,
             )
-            continue
-        check = _check_provider_endpoint_egress(
-            provider=provider,
-            endpoint=endpoint,
-            transport=transport_fn,
-        )
-        checks[provider] = check
-        if not check["reachable"]:
-            issues.append(
-                {
+            target_checks[label] = check
+            if not check["reachable"]:
+                issue = {
                     "code": "provider_egress_unreachable",
                     "provider": provider,
                     "endpoint": endpoint,
                 }
-            )
+                if provider == KRX_PROVIDER:
+                    issue["market"] = label
+                issues.append(issue)
+        if provider == KRX_PROVIDER:
+            checks[provider] = {
+                "reachable": all(check["reachable"] for check in target_checks.values()),
+                "markets": target_checks,
+            }
+        else:
+            checks[provider] = next(iter(target_checks.values()))
 
     return {
         "ok": not issues,
@@ -1112,10 +1124,27 @@ def _provider_egress_selection(event: dict[str, object]) -> tuple[list[str], lis
     return selected, issues
 
 
-def _provider_egress_endpoint(provider: str, settings: Settings) -> str:
+def _provider_egress_targets(provider: str, settings: Settings) -> list[dict[str, str]]:
     if provider == KRX_PROVIDER:
-        return settings.krx_daily_url or settings.krx_kospi_daily_url
-    return PROVIDER_EGRESS_ENDPOINTS[provider]
+        return [
+            {
+                "label": "KOSPI",
+                "endpoint": settings.krx_daily_url or settings.krx_kospi_daily_url,
+                "field": "KRX_DAILY_URL/KRX_KOSPI_DAILY_URL",
+            },
+            {
+                "label": "KOSDAQ",
+                "endpoint": settings.krx_kosdaq_daily_url,
+                "field": "KRX_KOSDAQ_DAILY_URL",
+            },
+        ]
+    return [
+        {
+            "label": provider,
+            "endpoint": PROVIDER_EGRESS_ENDPOINTS[provider],
+            "field": "endpoint",
+        }
+    ]
 
 
 def _scheduler_enable_gate_blockers(

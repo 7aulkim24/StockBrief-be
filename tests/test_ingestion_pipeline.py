@@ -1356,7 +1356,10 @@ def test_check_provider_egress_reports_reachable_provider_endpoints() -> None:
 
     result = check_provider_egress(
         transport=fake_transport,
-        settings=Settings(KRX_DAILY_URL="https://krx.example/daily"),
+        settings=Settings(
+            KRX_KOSPI_DAILY_URL="https://krx.example/kospi",
+            KRX_KOSDAQ_DAILY_URL="https://krx.example/kosdaq",
+        ),
     )
 
     assert result["ok"] is True
@@ -1364,7 +1367,17 @@ def test_check_provider_egress_reports_reachable_provider_endpoints() -> None:
     assert result["checks"]["providers"][OPENDART_PROVIDER]["reachable"] is True
     assert result["checks"]["providers"][NAVER_PROVIDER]["reachable"] is True
     assert result["checks"]["providers"][KRX_PROVIDER]["reachable"] is True
-    assert [call.method for call in calls] == ["GET", "GET", "GET"]
+    assert result["checks"]["providers"][KRX_PROVIDER]["markets"]["KOSPI"]["endpoint"] == (
+        "https://krx.example/kospi"
+    )
+    assert result["checks"]["providers"][KRX_PROVIDER]["markets"]["KOSDAQ"]["endpoint"] == (
+        "https://krx.example/kosdaq"
+    )
+    assert [call.method for call in calls] == ["GET", "GET", "GET", "GET"]
+    assert [call.url for call in calls][-2:] == [
+        "https://krx.example/kospi",
+        "https://krx.example/kosdaq",
+    ]
     assert all(call.headers == {} for call in calls)
     assert all(call.timeout_seconds == 3.0 for call in calls)
 
@@ -1379,13 +1392,45 @@ def test_check_provider_egress_empty_provider_list_defaults_to_supported_provide
     result = check_provider_egress(
         {"providers": []},
         transport=fake_transport,
-        settings=Settings(KRX_DAILY_URL="https://krx.example/daily"),
+        settings=Settings(
+            KRX_KOSPI_DAILY_URL="https://krx.example/kospi",
+            KRX_KOSDAQ_DAILY_URL="https://krx.example/kosdaq",
+        ),
     )
 
     assert result["ok"] is True
     assert result["issues"] == []
     assert set(result["checks"]["providers"]) == {OPENDART_PROVIDER, NAVER_PROVIDER, KRX_PROVIDER}
-    assert len(calls) == 3
+    assert len(calls) == 4
+
+
+def test_check_provider_egress_requires_kosdaq_krx_endpoint() -> None:
+    result = check_provider_egress(
+        {"providers": [KRX_PROVIDER]},
+        transport=lambda _request: ExternalResponse(status_code=401, payload={}),
+        settings=Settings(
+            KRX_KOSPI_DAILY_URL="https://krx.example/kospi",
+            KRX_KOSDAQ_DAILY_URL="",
+        ),
+    )
+
+    assert result["ok"] is False
+    assert result["checks"]["providers"][KRX_PROVIDER]["reachable"] is False
+    assert result["checks"]["providers"][KRX_PROVIDER]["markets"]["KOSPI"]["reachable"] is True
+    assert result["checks"]["providers"][KRX_PROVIDER]["markets"]["KOSDAQ"] == {
+        "reachable": False,
+        "endpoint": None,
+        "status_code": None,
+        "error_code": "missing_provider_endpoint",
+        "note": "Provider endpoint is not configured.",
+    }
+    assert result["issues"] == [
+        {
+            "code": "missing_provider_endpoint",
+            "provider": KRX_PROVIDER,
+            "field": "KRX_KOSDAQ_DAILY_URL",
+        }
+    ]
 
 
 def test_check_provider_egress_treats_http_error_as_reachable() -> None:

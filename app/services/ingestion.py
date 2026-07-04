@@ -273,6 +273,18 @@ class ProviderIngestionService:
                         "missing_data": external_result.missing_data,
                     },
                 )
+            elif (
+                request.provider == KRX_PROVIDER
+                and result_counts["inserted"] + result_counts["updated"] == 0
+            ):
+                completed = self.idempotency.mark_partial_failed(
+                    run=run,
+                    result_counts=result_counts,
+                    error_summary={
+                        "code": "krx_price_rows_not_persisted",
+                        "result_counts": result_counts,
+                    },
+                )
             else:
                 completed = self.idempotency.mark_succeeded(
                     run=run,
@@ -306,6 +318,7 @@ class ProviderIngestionService:
         request: ProviderIngestionRequest,
         ticker: str,
     ) -> ExternalApiResult:
+        stock = self.session.get(Stock, ticker)
         if request.provider == OPENDART_PROVIDER:
             return OpenDartClient(settings=self.settings, session=self.session).list_disclosures(
                 ticker=ticker,
@@ -315,8 +328,8 @@ class ProviderIngestionService:
             return KrxClient(settings=self.settings, session=self.session).daily_trading(
                 ticker=ticker,
                 base_date=_compact_source_date(request.source_date),
+                market=stock.market if stock else "KOSPI",
             )
-        stock = self.session.get(Stock, ticker)
         company_name = stock.company_name if stock else ticker
         return NaverNewsClient(settings=self.settings, session=self.session).search_news(
             ticker=ticker,
@@ -892,7 +905,10 @@ def check_ingestion_readiness(
         },
         KRX_PROVIDER: {
             "api_key_configured": bool(hydrated_settings.krx_api_key),
-            "daily_url_configured": bool(hydrated_settings.krx_daily_url),
+            "kospi_daily_url_configured": bool(
+                hydrated_settings.krx_daily_url or hydrated_settings.krx_kospi_daily_url
+            ),
+            "kosdaq_daily_url_configured": bool(hydrated_settings.krx_kosdaq_daily_url),
         },
     }
 
@@ -924,11 +940,11 @@ def check_ingestion_readiness(
                 "field": "KRX_API_KEY",
             }
         )
-    if KRX_PROVIDER in selected_providers and not hydrated_settings.krx_daily_url:
+    if KRX_PROVIDER in selected_providers and not _krx_daily_endpoints_configured(hydrated_settings):
         issues.append(
             {
                 "code": "missing_provider_endpoint",
-                "field": "KRX_DAILY_URL",
+                "field": "KRX_KOSPI_DAILY_URL/KRX_KOSDAQ_DAILY_URL",
             }
         )
 
@@ -1028,37 +1044,49 @@ def check_provider_egress(
     base_settings = settings or get_settings()
 
     for provider in selected_providers:
-        endpoint = _provider_egress_endpoint(provider, base_settings)
-        if not endpoint:
-            checks[provider] = {
-                "reachable": False,
-                "endpoint": None,
-                "status_code": None,
-                "error_code": "missing_provider_endpoint",
-                "note": "Provider endpoint is not configured.",
-            }
-            issues.append(
-                {
-                    "code": "missing_provider_endpoint",
-                    "provider": provider,
-                    "field": "KRX_DAILY_URL",
+        targets = _provider_egress_targets(provider, base_settings)
+        target_checks: dict[str, dict[str, Any]] = {}
+        for target in targets:
+            label = target["label"]
+            endpoint = target["endpoint"]
+            if not endpoint:
+                target_checks[label] = {
+                    "reachable": False,
+                    "endpoint": None,
+                    "status_code": None,
+                    "error_code": "missing_provider_endpoint",
+                    "note": "Provider endpoint is not configured.",
                 }
+                issues.append(
+                    {
+                        "code": "missing_provider_endpoint",
+                        "provider": provider,
+                        "field": target["field"],
+                    }
+                )
+                continue
+            check = _check_provider_endpoint_egress(
+                provider=provider,
+                endpoint=endpoint,
+                transport=transport_fn,
             )
-            continue
-        check = _check_provider_endpoint_egress(
-            provider=provider,
-            endpoint=endpoint,
-            transport=transport_fn,
-        )
-        checks[provider] = check
-        if not check["reachable"]:
-            issues.append(
-                {
+            target_checks[label] = check
+            if not check["reachable"]:
+                issue = {
                     "code": "provider_egress_unreachable",
                     "provider": provider,
                     "endpoint": endpoint,
                 }
-            )
+                if provider == KRX_PROVIDER:
+                    issue["market"] = label
+                issues.append(issue)
+        if provider == KRX_PROVIDER:
+            checks[provider] = {
+                "reachable": all(check["reachable"] for check in target_checks.values()),
+                "markets": target_checks,
+            }
+        else:
+            checks[provider] = next(iter(target_checks.values()))
 
     return {
         "ok": not issues,
@@ -1096,10 +1124,27 @@ def _provider_egress_selection(event: dict[str, object]) -> tuple[list[str], lis
     return selected, issues
 
 
-def _provider_egress_endpoint(provider: str, settings: Settings) -> str:
+def _provider_egress_targets(provider: str, settings: Settings) -> list[dict[str, str]]:
     if provider == KRX_PROVIDER:
-        return settings.krx_daily_url
-    return PROVIDER_EGRESS_ENDPOINTS[provider]
+        return [
+            {
+                "label": "KOSPI",
+                "endpoint": settings.krx_daily_url or settings.krx_kospi_daily_url,
+                "field": "KRX_DAILY_URL/KRX_KOSPI_DAILY_URL",
+            },
+            {
+                "label": "KOSDAQ",
+                "endpoint": settings.krx_kosdaq_daily_url,
+                "field": "KRX_KOSDAQ_DAILY_URL",
+            },
+        ]
+    return [
+        {
+            "label": provider,
+            "endpoint": PROVIDER_EGRESS_ENDPOINTS[provider],
+            "field": "endpoint",
+        }
+    ]
 
 
 def _scheduler_enable_gate_blockers(
@@ -1215,7 +1260,7 @@ def hydrate_external_api_settings(settings: Settings) -> Settings:
         and settings.naver_client_id
         and settings.naver_client_secret
         and settings.krx_api_key
-        and settings.krx_daily_url
+        and _krx_daily_endpoints_configured(settings)
     ):
         return settings
     if not settings.external_api_secret_arn:
@@ -1243,11 +1288,26 @@ def hydrate_external_api_settings(settings: Settings) -> Settings:
                 settings.krx_daily_url
                 or _first_secret_value(secret, "KRX_DAILY_URL", "krx_daily_url")
             ),
+            "krx_kospi_daily_url": (
+                _first_secret_value(secret, "KRX_KOSPI_DAILY_URL", "krx_kospi_daily_url")
+                or settings.krx_kospi_daily_url
+            ),
+            "krx_kosdaq_daily_url": (
+                _first_secret_value(secret, "KRX_KOSDAQ_DAILY_URL", "krx_kosdaq_daily_url")
+                or settings.krx_kosdaq_daily_url
+            ),
             "krx_api_key_header": (
-                settings.krx_api_key_header
-                or _first_secret_value(secret, "KRX_API_KEY_HEADER", "krx_api_key_header")
+                _first_secret_value(secret, "KRX_API_KEY_HEADER", "krx_api_key_header")
+                or settings.krx_api_key_header
             ),
         }
+    )
+
+
+def _krx_daily_endpoints_configured(settings: Settings) -> bool:
+    return bool(
+        (settings.krx_daily_url or settings.krx_kospi_daily_url)
+        and settings.krx_kosdaq_daily_url
     )
 
 
@@ -1496,7 +1556,7 @@ def _normalize_krx_price_item(
     *,
     base_date: str,
 ) -> dict[str, Any] | None:
-    ticker = _ticker_from_provider(item, "ISU_SRT_CD", "isuSrtCd", "ticker")
+    ticker = _ticker_from_provider(item, "ISU_CD", "isuCd", "ISU_SRT_CD", "isuSrtCd", "ticker")
     raw_date = _first_text(item, "BAS_DD", "basDd", "base_date") or base_date
     trade_date = _parse_yyyymmdd(_compact_source_date(raw_date))
     if not ticker or trade_date is None:
@@ -1513,12 +1573,17 @@ def _normalize_krx_price_item(
 
 
 def _ticker_from_provider(item: dict[str, Any], *keys: str) -> str:
-    raw = _first_text(item, *keys)
-    if raw.startswith("A") and raw[1:].isdigit() and len(raw) <= 7:
-        return raw[1:].zfill(6)
-    if raw.isdigit() and len(raw) <= 6:
-        return raw.zfill(6)
-    return raw
+    first_raw = ""
+    for key in keys:
+        raw = _first_text(item, key)
+        if not raw:
+            continue
+        first_raw = first_raw or raw
+        if raw.startswith("A") and raw[1:].isdigit() and len(raw) <= 7:
+            return raw[1:].zfill(6)
+        if raw.isdigit() and len(raw) <= 6:
+            return raw.zfill(6)
+    return first_raw
 
 
 def _first_text(item: dict[str, Any], *keys: str) -> str:

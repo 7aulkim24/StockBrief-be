@@ -88,9 +88,9 @@ class EvidenceService:
                 StockEvidenceItemResponse(
                     id=f"financial_{ticker}_{row.fiscal_year}_{row.fiscal_period}",
                     type="financial",
-                    title=f"{row.fiscal_year} {row.fiscal_period} 재무 mock 근거",
-                    summary="재무제표 mock 데이터의 주요 수치가 검토 근거로 사용됩니다.",
-                    source_name=source.source_name if source else "FINANCIAL_MOCK",
+                    title=f"{row.fiscal_year} {row.fiscal_period} 재무 근거",
+                    summary="재무제표 주요 수치가 검토 근거로 사용됩니다.",
+                    source_name=source.source_name if source else "FINANCIAL_STATEMENT",
                     source_url=source.source_url if source else None,
                     source_identifier=(
                         source.external_id
@@ -172,8 +172,8 @@ class EvidenceService:
             StockEvidenceItemResponse(
                 id=f"price_{ticker}_{row.trade_date.isoformat()}",
                 type="price",
-                title=f"{row.trade_date.isoformat()} 가격 지표 fallback mock",
-                summary="가격과 유동성 fallback mock 데이터가 검토 근거로 사용됩니다.",
+                title=f"{row.trade_date.isoformat()} 가격 지표",
+                summary="가격과 유동성 데이터가 검토 근거로 사용됩니다.",
                 source_name=row.source,
                 source_url=None,
                 source_identifier=f"{row.source}:{ticker}:{row.trade_date.isoformat()}",

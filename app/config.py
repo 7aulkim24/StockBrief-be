@@ -32,8 +32,16 @@ class Settings(BaseSettings):
     naver_client_id: str = Field(default="", validation_alias="NAVER_CLIENT_ID")
     naver_client_secret: str = Field(default="", validation_alias="NAVER_CLIENT_SECRET")
     krx_api_key: str = Field(default="", validation_alias="KRX_API_KEY")
-    krx_api_key_header: str = Field(default="Authorization", validation_alias="KRX_API_KEY_HEADER")
+    krx_api_key_header: str = Field(default="AUTH_KEY", validation_alias="KRX_API_KEY_HEADER")
     krx_daily_url: str = Field(default="", validation_alias="KRX_DAILY_URL")
+    krx_kospi_daily_url: str = Field(
+        default="https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd",
+        validation_alias="KRX_KOSPI_DAILY_URL",
+    )
+    krx_kosdaq_daily_url: str = Field(
+        default="https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd",
+        validation_alias="KRX_KOSDAQ_DAILY_URL",
+    )
     external_api_secret_arn: str = Field(default="", validation_alias="EXTERNAL_API_SECRET_ARN")
     ingestion_raw_bucket: str = Field(default="", validation_alias="INGESTION_RAW_BUCKET")
     cognito_user_pool_id: str = Field(default="", validation_alias="COGNITO_USER_POOL_ID")

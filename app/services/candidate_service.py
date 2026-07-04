@@ -360,11 +360,11 @@ class CandidateService:
     def stock_brief_contract(self, *, stock: Stock, score: RecommendationScore) -> StockBriefContract:
         return StockBriefContract(
             summary=(
-                f"{stock.company_name}는 공개 데이터 기반 mock 점수와 근거로 "
+                f"{stock.company_name}는 공개 데이터 기반 점수와 근거로 "
                 "검토 후보에 포함된 종목입니다."
             ),
             risk_notes=[
-                "실데이터 연동 전 mock 데이터 기준입니다.",
+                "OpenDART, NAVER, KRX 등 연결된 원천 데이터 기준입니다.",
                 "투자 판단 전 원문과 최신 데이터를 확인해야 합니다.",
             ],
             as_of=score.as_of_date,

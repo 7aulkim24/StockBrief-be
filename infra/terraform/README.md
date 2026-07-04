@@ -484,18 +484,20 @@ operation from the same Lambda maintenance handler:
 ```
 
 The readiness response reports whether `INGESTION_RAW_BUCKET`,
-`EXTERNAL_API_SECRET_ARN`, `OPENDART_API_KEY`, `NAVER_CLIENT_ID`, and
-`NAVER_CLIENT_SECRET` are configured. It reports presence only and does not
-return secret values. It also does not call external provider APIs, so outbound
-internet egress must still be verified separately before scheduled ingestion is
-enabled.
+`EXTERNAL_API_SECRET_ARN`, `OPENDART_API_KEY`, `NAVER_CLIENT_ID`,
+`NAVER_CLIENT_SECRET`, and `KRX_API_KEY` are configured. KRX daily endpoints
+default to the checked-in KRX API spec URLs and may be overridden through
+`KRX_DAILY_URL`, `KRX_KOSPI_DAILY_URL`, or `KRX_KOSDAQ_DAILY_URL` in the
+external API secret. Readiness reports presence only and does not return secret
+values. It also does not call external provider APIs, so outbound internet
+egress must still be verified separately before scheduled ingestion is enabled.
 
 After readiness passes, verify outbound provider egress from the Lambda runtime:
 
 ```json
 {
   "stockbrief_operation": "check_provider_egress",
-  "providers": ["OpenDART", "NAVER_NEWS"]
+  "providers": ["OpenDART", "NAVER_NEWS", "KRX"]
 }
 ```
 
@@ -517,7 +519,7 @@ maintenance events:
 }
 ```
 
-Supported providers are `OpenDART` and `NAVER_NEWS`. Each ticker run writes an
+Supported providers are `OpenDART`, `NAVER_NEWS`, and `KRX`. Each ticker run writes an
 `ingestion_runs` row before provider access, computes a stable request hash, and
 skips duplicate successful runs as `replayed`. The replay check uses the
 normalized `input_hash`, so the same provider/ticker/source date/request
@@ -529,6 +531,7 @@ stored in RDS using these first baseline upsert keys:
 
 - OpenDART disclosures: `provider + receipt_no`
 - NAVER news: `source_url`, with the source document keyed by `source_name + source_url_hash`
+- KRX prices: `ticker + trade_date + source`
 - Source documents: `source_name + external_id`, fallback `content_hash`
 
 Manual and scheduled ingestion requests are rejected before provider calls when
@@ -555,6 +558,14 @@ External API secret values must be stored under:
 - `OPENDART_API_KEY`
 - `NAVER_CLIENT_ID`
 - `NAVER_CLIENT_SECRET`
+- `KRX_API_KEY`
+
+Optional KRX endpoint overrides:
+
+- `KRX_API_KEY_HEADER`
+- `KRX_DAILY_URL` (legacy KOSPI override)
+- `KRX_KOSPI_DAILY_URL`
+- `KRX_KOSDAQ_DAILY_URL`
 
 Keep the scheduler disabled for the first dev apply. Manually invoke
 `ingest_provider_batch` first, confirm `ingestion_runs`, normalized rows, S3 raw
@@ -568,14 +579,14 @@ such as NAT or another approved egress design before enabling scheduled jobs.
 Do not set `enable_ingestion_scheduler = true` until all of these checks are
 complete and recorded in the PR body:
 
-- `OPENDART_API_KEY`, `NAVER_CLIENT_ID`, and `NAVER_CLIENT_SECRET` are populated
-  in Secrets Manager outside git.
+- `OPENDART_API_KEY`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, and
+  `KRX_API_KEY` are populated in Secrets Manager outside git.
 - A manual `ingest_provider_batch` run succeeds for the target provider and
   ticker list without `missing_api_key` fallback.
 - Lambda outbound internet egress to the selected provider is verified with
   `check_provider_egress` from the deployed Lambda environment. S3 Gateway VPC
   Endpoint only covers raw archive writes to S3; it does not provide internet
-  egress for OpenDART or Naver.
+  egress for OpenDART, Naver, or KRX.
   If VPC Lambda egress is required, enable `enable_lambda_nat_egress` only for
   the smoke window and turn it off after the evidence is collected.
 - S3 raw archive objects are written for the manual run and the SQS DLQ remains
@@ -773,7 +784,7 @@ Secret values must be filled outside git. The placeholder secret names are:
 | Secret name | Keys |
 | --- | --- |
 | `stockbrief-dev/database` | `DATABASE_URL` |
-| `stockbrief-dev/external-api` | `OPENDART_API_KEY`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `KRX_DATA_PATH` |
+| `stockbrief-dev/external-api` | `OPENDART_API_KEY`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `KRX_API_KEY`, optional KRX endpoint overrides |
 
 These keys match `.env.example` secret-like variables:
 
@@ -782,7 +793,10 @@ These keys match `.env.example` secret-like variables:
 - `OPENDART_API_KEY`
 - `NAVER_CLIENT_ID`
 - `NAVER_CLIENT_SECRET`
-- `KRX_DATA_PATH`
+- `KRX_API_KEY`
+- `KRX_API_KEY_HEADER`
+- `KRX_KOSPI_DAILY_URL`
+- `KRX_KOSDAQ_DAILY_URL`
 
 Non-secret runtime values remain Lambda or Amplify environment variables:
 
@@ -811,8 +825,8 @@ Non-secret runtime values remain Lambda or Amplify environment variables:
 ### External API Credential Update Runbook
 
 Use this runbook after Terraform creates `stockbrief-dev/external-api` and
-before running live OpenDART or NAVER ingestion. Never commit real API keys,
-tokens, or copied secret payloads.
+before running live OpenDART, NAVER, or KRX ingestion. Never commit real API
+keys, tokens, endpoints, or copied secret payloads.
 
 1. Resolve the Terraform-managed external API secret ARN:
 
@@ -861,7 +875,7 @@ tokens, or copied secret payloads.
    credentials from the shell session:
 
    ```bash
-   unset OPENDART_API_KEY NAVER_CLIENT_ID NAVER_CLIENT_SECRET KRX_DATA_PATH
+   unset OPENDART_API_KEY NAVER_CLIENT_ID NAVER_CLIENT_SECRET KRX_API_KEY
    ```
 
 7. Run one manual Lambda ingestion per provider before enabling any scheduler.
@@ -883,13 +897,21 @@ tokens, or copied secret payloads.
      /tmp/stockbrief-naver-ingest-response.json \
      --profile stockbrief-dev \
      --region ap-northeast-2
+
+   aws lambda invoke \
+     --function-name stockbrief-dev-api \
+     --payload '{"stockbrief_operation":"ingest_provider_batch","provider":"KRX","tickers":["005930"],"source_date":"YYYY-MM-DD"}' \
+     --cli-binary-format raw-in-base64-out \
+     /tmp/stockbrief-krx-ingest-response.json \
+     --profile stockbrief-dev \
+     --region ap-northeast-2
    ```
 
 8. Treat credentials as present only after the Lambda responses no longer report
    `missing_api_key` for `OPENDART_API_KEY` or
-   `NAVER_CLIENT_ID/NAVER_CLIENT_SECRET`. Credential presence is necessary but
+   `NAVER_CLIENT_ID/NAVER_CLIENT_SECRET` or `KRX_API_KEY`. Credential presence is necessary but
    not sufficient for live ingestion; the Lambda private subnet must also have
-   outbound internet egress to reach OpenDART and NAVER.
+   outbound internet egress to reach OpenDART, NAVER, and KRX.
 
 ## Cognito And API Gateway JWT Authorizer
 

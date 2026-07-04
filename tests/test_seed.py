@@ -1,9 +1,12 @@
 from collections.abc import Iterable
 
+from sqlalchemy import create_engine
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.orm import (
+    Base,
     CompanyIdentifier,
     Disclosure,
     EvidenceChunk,
@@ -16,8 +19,8 @@ from app.orm import (
     SourceDocument,
     Stock,
 )
-from app.seed.mock_data import MOCK_STOCKS
-from app.seed.seed_mock_data import seed_mock_data
+from app.seed.seed_stock_universe import seed_stock_universe
+from app.seed.stock_universe import STOCK_UNIVERSE
 
 
 def _count(session: Session, model: type[object]) -> int:
@@ -28,15 +31,15 @@ def _text_values(values: Iterable[object]) -> str:
     return "\n".join(str(value) for value in values if value is not None)
 
 
-def test_seeded_session_fixture_loads_mvp_vertical_flow_data(
+def test_seeded_session_fixture_loads_provider_vertical_flow_data(
     seeded_session: Session,
 ) -> None:
-    seed_stock_count = len(MOCK_STOCKS)
+    seed_stock_count = len(STOCK_UNIVERSE)
 
     assert seed_stock_count >= 30
     assert _count(seeded_session, Stock) == seed_stock_count
     assert _count(seeded_session, CompanyIdentifier) == seed_stock_count * 2
-    assert _count(seeded_session, FinancialStatement) == seed_stock_count
+    assert _count(seeded_session, FinancialStatement) == seed_stock_count * 2
     assert _count(seeded_session, Disclosure) == seed_stock_count
     assert _count(seeded_session, NewsItem) == seed_stock_count
     assert _count(seeded_session, PriceMetric) == seed_stock_count
@@ -44,7 +47,7 @@ def test_seeded_session_fixture_loads_mvp_vertical_flow_data(
     assert _count(seeded_session, EvidenceChunk) == seed_stock_count * 2
     assert _count(seeded_session, RiskSignal) == seed_stock_count
     assert _count(seeded_session, RecommendationScore) == seed_stock_count
-    assert _count(seeded_session, RecommendationReason) == seed_stock_count
+    assert _count(seeded_session, RecommendationReason) == seed_stock_count * 3
 
 
 def test_seed_includes_opendart_corp_code_and_stock_code(
@@ -57,34 +60,73 @@ def test_seed_includes_opendart_corp_code_and_stock_code(
     assert {
         (row.provider, row.identifier_type, row.identifier_value) for row in rows
     } == {
-        ("OpenDART", "corp_code", "MOCK00126380"),
+        ("OpenDART", "corp_code", "00126380"),
         ("OpenDART", "stock_code", "005930"),
     }
+
+
+def test_seed_stock_universe_prepares_provider_master_data_only() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        result = seed_stock_universe(session, tickers=["005930", "000660", "999999"])
+
+        identifiers = session.scalars(
+            select(CompanyIdentifier).where(CompanyIdentifier.ticker == "005930")
+        ).all()
+
+        assert result == {
+            "stocks": 2,
+            "identifiers": 4,
+            "tickers": ["005930", "000660"],
+            "unknown_tickers": ["999999"],
+        }
+        assert _count(session, Stock) == 2
+        assert _count(session, CompanyIdentifier) == 4
+        assert _count(session, SourceDocument) == 0
+        assert _count(session, EvidenceChunk) == 0
+        assert _count(session, PriceMetric) == 0
+        assert _count(session, RecommendationScore) == 0
+        assert {
+            (row.provider, row.identifier_type, row.identifier_value)
+            for row in identifiers
+        } == {
+            ("OpenDART", "corp_code", "00126380"),
+            ("OpenDART", "stock_code", "005930"),
+        }
 
 
 def test_seeded_candidates_pass_evidence_gate_inputs(seeded_session: Session) -> None:
     scores = seeded_session.scalars(select(RecommendationScore)).all()
     risks = seeded_session.scalars(select(RiskSignal)).all()
+    prices = seeded_session.scalars(select(PriceMetric)).all()
 
     assert all(score.is_candidate_eligible for score in scores)
     assert all(score.evidence_count >= 2 for score in scores)
     assert all(score.missing_data == [] for score in scores)
     assert all(score.data_freshness["as_of"] for score in scores)
+    assert all(score.data_freshness["fallback_data"] == [] for score in scores)
     assert all(risk.display_text for risk in risks)
+    assert {price.source for price in prices} == {"KRX"}
 
 
 def test_seed_is_idempotent(seeded_session: Session) -> None:
-    seed_mock_data(seeded_session)
+    seed_stock_universe(seeded_session)
 
-    seed_stock_count = len(MOCK_STOCKS)
+    seed_stock_count = len(STOCK_UNIVERSE)
 
     assert _count(seeded_session, Stock) == seed_stock_count
     assert _count(seeded_session, CompanyIdentifier) == seed_stock_count * 2
     assert _count(seeded_session, RecommendationScore) == seed_stock_count
-    assert _count(seeded_session, RecommendationReason) == seed_stock_count
+    assert _count(seeded_session, RecommendationReason) == seed_stock_count * 3
 
 
-def test_seed_user_facing_copy_uses_review_candidate_tone(
+def test_provider_fixture_user_facing_copy_uses_review_candidate_tone(
     seeded_session: Session,
 ) -> None:
     reasons = seeded_session.scalars(select(RecommendationReason)).all()
@@ -92,7 +134,7 @@ def test_seed_user_facing_copy_uses_review_candidate_tone(
     risks = seeded_session.scalars(select(RiskSignal)).all()
 
     text = _text_values(
-        [stock.company_name for stock in MOCK_STOCKS]
+        [stock.company_name for stock in STOCK_UNIVERSE]
         + [reason.summary for reason in reasons]
         + [chunk.chunk_text for chunk in evidence]
         + [risk.display_text for risk in risks]

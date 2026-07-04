@@ -19,16 +19,20 @@ def test_ingestion_operations_runbook_exists_and_covers_manual_smoke() -> None:
     assert "terraform output external_api_secret_arn" in runbook
     assert "enable_ingestion_scheduler" in runbook
     assert '"stockbrief_operation":"check_provider_egress"' in runbook
-    assert '"providers":["OpenDART","NAVER_NEWS"]' in runbook
+    assert '"providers":["OpenDART","NAVER_NEWS","KRX"]' in runbook
     assert "does not send API keys or client secrets" in runbook
     assert "DNS, connection, and timeout failures" in runbook
     assert "aws lambda invoke" in runbook
     assert "scripts/check_ingestion_smoke.py" in runbook
     assert "--run-provider-ingest" in runbook
     assert "It redacts secret-like fields" in runbook
-    assert '"stockbrief_operation":"ingest_provider_batch"' in runbook
+    assert '"stockbrief_operation":"seed_stock_universe"' in runbook
+    assert '"stockbrief_operation":"seed_demo_stocks"' not in runbook
+    assert '"stockbrief_operation":"seed_mock_data"' not in runbook
+    assert '"stockbrief_operation":"refresh_score_snapshots"' in runbook
     assert '"provider":"OpenDART"' in runbook
     assert '"provider":"NAVER_NEWS"' in runbook
+    assert '"provider":"KRX"' in runbook
     assert '"source_date":"YYYY-MM-DD"' in runbook
     assert '"stockbrief_operation":"get_ingestion_status"' in runbook
     assert '"providers":["NAVER_NEWS"]' in runbook
@@ -62,6 +66,8 @@ def test_ingestion_operations_runbook_exists_and_covers_manual_smoke() -> None:
     assert "Replace `YYYY-MM-DD`" in runbook
     assert "with the business date you want to" in runbook
     assert "missing_api_key" in runbook
+    assert "KRX_API_KEY" in runbook
+    assert "preflight_not_ready" in runbook
     assert "replayed or duplicate-safe result" in runbook
 
 

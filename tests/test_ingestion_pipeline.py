@@ -176,7 +176,7 @@ def test_opendart_ingestion_upserts_disclosures_and_sources(
         return ExternalApiResult(
             provider=OPENDART_PROVIDER,
             endpoint="/list.json",
-            cache_key=f"disclosures:{ticker}:mock:{page_count}",
+            cache_key=f"disclosures:{ticker}:sample:{page_count}",
             data_status="available",
             status_code=200,
             payload={
@@ -396,7 +396,7 @@ def test_explicit_run_id_is_scoped_per_ticker_in_batch(
         return ExternalApiResult(
             provider=OPENDART_PROVIDER,
             endpoint="/list.json",
-            cache_key=f"disclosures:{ticker}:mock:{page_count}",
+            cache_key=f"disclosures:{ticker}:sample:{page_count}",
             data_status="available",
             status_code=200,
             payload={
@@ -551,7 +551,7 @@ def test_ingestion_status_summarizes_recent_runs_and_latest_evidence(
         return ExternalApiResult(
             provider=OPENDART_PROVIDER,
             endpoint="/list.json",
-            cache_key=f"disclosures:{ticker}:mock:{page_count}",
+            cache_key=f"disclosures:{ticker}:sample:{page_count}",
             data_status="available",
             status_code=200,
             payload={
@@ -786,11 +786,144 @@ def test_provider_fallback_marks_partial_failed_without_persisting_rows(
     assert result["results"][0]["error_summary"]["code"] == "provider_fallback"
 
 
+def test_krx_ingestion_uses_short_code_when_isu_cd_is_isin(
+    monkeypatch,
+    seeded_session: Session,
+) -> None:
+    def fake_daily_trading(self, *, ticker: str, base_date: str, market: str = "KOSPI"):
+        return ExternalApiResult(
+            provider=KRX_PROVIDER,
+            endpoint="/daily",
+            cache_key=f"krx:{ticker}:{base_date}",
+            data_status="available",
+            status_code=200,
+            payload={
+                "ticker": ticker,
+                "base_date": base_date,
+                "OutBlock_1": [
+                    {
+                        "BAS_DD": base_date,
+                        "ISU_CD": "KR7005930003",
+                        "ISU_SRT_CD": ticker,
+                        "TDD_CLSPRC": "71,000",
+                        "ACC_TRDVOL": "1,234,567",
+                        "ACC_TRDVAL": "87,654,321,000",
+                        "MKTCAP": "420,000,000,000,000",
+                        "FLUC_RT": "1.50",
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(
+        "app.services.ingestion.KrxClient.daily_trading",
+        fake_daily_trading,
+    )
+    service = ProviderIngestionService(
+        seeded_session,
+        settings=Settings(KRX_API_KEY="krx-secret"),
+        archiver=NoopPayloadArchiver(),
+    )
+
+    result = service.run_provider_batch(
+        ProviderIngestionRequest(
+            provider=KRX_PROVIDER,
+            tickers=["005930"],
+            source_date="2026-06-18",
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["results"][0]["status"] == "succeeded"
+    assert result["results"][0]["result_counts"] == {
+        "inserted": 1,
+        "updated": 0,
+        "skipped": 0,
+    }
+
+    price = seeded_session.scalars(
+        select(PriceMetric).where(
+            PriceMetric.ticker == "005930",
+            PriceMetric.trade_date == datetime(2026, 6, 18, tzinfo=timezone.utc).date(),
+        )
+    ).one()
+    assert price.close_price == 71000
+    assert price.source == KRX_PROVIDER
+
+
+def test_krx_ingestion_marks_partial_failed_when_no_price_rows_persist(
+    monkeypatch,
+    seeded_session: Session,
+) -> None:
+    def fake_daily_trading(self, *, ticker: str, base_date: str, market: str = "KOSPI"):
+        return ExternalApiResult(
+            provider=KRX_PROVIDER,
+            endpoint="/daily",
+            cache_key=f"krx:{ticker}:{base_date}",
+            data_status="available",
+            status_code=200,
+            payload={
+                "ticker": ticker,
+                "base_date": base_date,
+                "OutBlock_1": [
+                    {
+                        "BAS_DD": base_date,
+                        "ISU_CD": "KR7999990000",
+                        "ISU_SRT_CD": "999999",
+                        "TDD_CLSPRC": "1,000",
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(
+        "app.services.ingestion.KrxClient.daily_trading",
+        fake_daily_trading,
+    )
+    service = ProviderIngestionService(
+        seeded_session,
+        settings=Settings(KRX_API_KEY="krx-secret"),
+        archiver=NoopPayloadArchiver(),
+    )
+
+    result = service.run_provider_batch(
+        ProviderIngestionRequest(
+            provider=KRX_PROVIDER,
+            tickers=["005930"],
+            source_date="2026-06-18",
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["results"][0]["status"] == "partial_failed"
+    assert result["results"][0]["result_counts"] == {
+        "inserted": 0,
+        "updated": 0,
+        "skipped": 1,
+    }
+    assert result["results"][0]["error_summary"] == {
+        "code": "krx_price_rows_not_persisted",
+        "result_counts": {
+            "inserted": 0,
+            "updated": 0,
+            "skipped": 1,
+        },
+    }
+
+    run = seeded_session.scalars(
+        select(IngestionRun).where(
+            IngestionRun.provider == KRX_PROVIDER,
+            IngestionRun.target_scope["ticker"].as_string() == "005930",
+        )
+    ).one()
+    assert run.status == "partial_failed"
+
+
 def test_refresh_score_snapshots_uses_successful_krx_tickers_and_marks_partial_freshness(
     monkeypatch,
     seeded_session: Session,
 ) -> None:
-    def fake_daily_trading(self, *, ticker: str, base_date: str):
+    def fake_daily_trading(self, *, ticker: str, base_date: str, market: str = "KOSPI"):
         if ticker == "000660":
             return ExternalApiResult(
                 provider=KRX_PROVIDER,
@@ -819,7 +952,7 @@ def test_refresh_score_snapshots_uses_successful_krx_tickers_and_marks_partial_f
                 "OutBlock_1": [
                     {
                         "BAS_DD": base_date,
-                        "ISU_SRT_CD": ticker,
+                        "ISU_CD": ticker,
                         "TDD_CLSPRC": "70,000",
                         "ACC_TRDVOL": "1,234,567",
                         "ACC_TRDVAL": "86,419,690,000",
@@ -896,7 +1029,7 @@ def test_persist_failure_rolls_back_normalized_rows_before_marking_failed(
         return ExternalApiResult(
             provider=OPENDART_PROVIDER,
             endpoint="/list.json",
-            cache_key=f"disclosures:{ticker}:mock:{page_count}",
+            cache_key=f"disclosures:{ticker}:sample:{page_count}",
             data_status="available",
             status_code=200,
             payload={
@@ -1021,7 +1154,9 @@ def test_hydrate_external_api_settings_reads_external_secret(monkeypatch) -> Non
             "NAVER_CLIENT_ID": "naver-id",
             "NAVER_CLIENT_SECRET": "naver-secret",
             "KRX_API_KEY": "krx-secret",
-            "KRX_DAILY_URL": "https://krx.example/daily",
+            "KRX_KOSPI_DAILY_URL": "https://krx.example/kospi",
+            "KRX_KOSDAQ_DAILY_URL": "https://krx.example/kosdaq",
+            "KRX_API_KEY_HEADER": "X-KRX-KEY",
         },
     )
 
@@ -1033,7 +1168,9 @@ def test_hydrate_external_api_settings_reads_external_secret(monkeypatch) -> Non
     assert settings.naver_client_id == "naver-id"
     assert settings.naver_client_secret == "naver-secret"
     assert settings.krx_api_key == "krx-secret"
-    assert settings.krx_daily_url == "https://krx.example/daily"
+    assert settings.krx_kospi_daily_url == "https://krx.example/kospi"
+    assert settings.krx_kosdaq_daily_url == "https://krx.example/kosdaq"
+    assert settings.krx_api_key_header == "X-KRX-KEY"
 
 
 def test_check_ingestion_readiness_reports_missing_configuration_without_secret_values() -> None:
@@ -1054,7 +1191,8 @@ def test_check_ingestion_readiness_reports_missing_configuration_without_secret_
         },
         KRX_PROVIDER: {
             "api_key_configured": False,
-            "daily_url_configured": False,
+            "kospi_daily_url_configured": True,
+            "kosdaq_daily_url_configured": True,
         },
     }
     assert result["checks"]["network"]["outbound_internet_egress_verified"] is False
@@ -1065,7 +1203,6 @@ def test_check_ingestion_readiness_reports_missing_configuration_without_secret_
         {"code": "missing_provider_credential", "field": "NAVER_CLIENT_ID"},
         {"code": "missing_provider_credential", "field": "NAVER_CLIENT_SECRET"},
         {"code": "missing_provider_credential", "field": "KRX_API_KEY"},
-        {"code": "missing_provider_endpoint", "field": "KRX_DAILY_URL"},
     ]
 
 
@@ -1079,7 +1216,6 @@ def test_check_ingestion_readiness_loads_external_secret_without_exposing_values
             "NAVER_CLIENT_ID": "naver-id",
             "NAVER_CLIENT_SECRET": "naver-secret",
             "KRX_API_KEY": "krx-secret",
-            "KRX_DAILY_URL": "https://krx.example/daily",
         },
     )
 
@@ -1220,7 +1356,10 @@ def test_check_provider_egress_reports_reachable_provider_endpoints() -> None:
 
     result = check_provider_egress(
         transport=fake_transport,
-        settings=Settings(KRX_DAILY_URL="https://krx.example/daily"),
+        settings=Settings(
+            KRX_KOSPI_DAILY_URL="https://krx.example/kospi",
+            KRX_KOSDAQ_DAILY_URL="https://krx.example/kosdaq",
+        ),
     )
 
     assert result["ok"] is True
@@ -1228,7 +1367,17 @@ def test_check_provider_egress_reports_reachable_provider_endpoints() -> None:
     assert result["checks"]["providers"][OPENDART_PROVIDER]["reachable"] is True
     assert result["checks"]["providers"][NAVER_PROVIDER]["reachable"] is True
     assert result["checks"]["providers"][KRX_PROVIDER]["reachable"] is True
-    assert [call.method for call in calls] == ["GET", "GET", "GET"]
+    assert result["checks"]["providers"][KRX_PROVIDER]["markets"]["KOSPI"]["endpoint"] == (
+        "https://krx.example/kospi"
+    )
+    assert result["checks"]["providers"][KRX_PROVIDER]["markets"]["KOSDAQ"]["endpoint"] == (
+        "https://krx.example/kosdaq"
+    )
+    assert [call.method for call in calls] == ["GET", "GET", "GET", "GET"]
+    assert [call.url for call in calls][-2:] == [
+        "https://krx.example/kospi",
+        "https://krx.example/kosdaq",
+    ]
     assert all(call.headers == {} for call in calls)
     assert all(call.timeout_seconds == 3.0 for call in calls)
 
@@ -1243,13 +1392,45 @@ def test_check_provider_egress_empty_provider_list_defaults_to_supported_provide
     result = check_provider_egress(
         {"providers": []},
         transport=fake_transport,
-        settings=Settings(KRX_DAILY_URL="https://krx.example/daily"),
+        settings=Settings(
+            KRX_KOSPI_DAILY_URL="https://krx.example/kospi",
+            KRX_KOSDAQ_DAILY_URL="https://krx.example/kosdaq",
+        ),
     )
 
     assert result["ok"] is True
     assert result["issues"] == []
     assert set(result["checks"]["providers"]) == {OPENDART_PROVIDER, NAVER_PROVIDER, KRX_PROVIDER}
-    assert len(calls) == 3
+    assert len(calls) == 4
+
+
+def test_check_provider_egress_requires_kosdaq_krx_endpoint() -> None:
+    result = check_provider_egress(
+        {"providers": [KRX_PROVIDER]},
+        transport=lambda _request: ExternalResponse(status_code=401, payload={}),
+        settings=Settings(
+            KRX_KOSPI_DAILY_URL="https://krx.example/kospi",
+            KRX_KOSDAQ_DAILY_URL="",
+        ),
+    )
+
+    assert result["ok"] is False
+    assert result["checks"]["providers"][KRX_PROVIDER]["reachable"] is False
+    assert result["checks"]["providers"][KRX_PROVIDER]["markets"]["KOSPI"]["reachable"] is True
+    assert result["checks"]["providers"][KRX_PROVIDER]["markets"]["KOSDAQ"] == {
+        "reachable": False,
+        "endpoint": None,
+        "status_code": None,
+        "error_code": "missing_provider_endpoint",
+        "note": "Provider endpoint is not configured.",
+    }
+    assert result["issues"] == [
+        {
+            "code": "missing_provider_endpoint",
+            "provider": KRX_PROVIDER,
+            "field": "KRX_KOSDAQ_DAILY_URL",
+        }
+    ]
 
 
 def test_check_provider_egress_treats_http_error_as_reachable() -> None:

@@ -26,6 +26,9 @@ def test_maintenance_rejects_unknown_operation() -> None:
     assert "check_raw_archive_write" in result["supported_operations"]
     assert "check_provider_egress" in result["supported_operations"]
     assert "check_ingestion_scheduler_enable_gate" in result["supported_operations"]
+    assert "seed_stock_universe" in result["supported_operations"]
+    assert "seed_mock_data" not in result["supported_operations"]
+    assert "seed_demo_stocks" not in result["supported_operations"]
     assert "ingest_provider_batch" in result["supported_operations"]
     assert "get_ingestion_status" in result["supported_operations"]
     assert "reconcile_stale_ingestion_runs" in result["supported_operations"]
@@ -95,6 +98,25 @@ def test_maintenance_routes_scheduler_enable_gate_operation(monkeypatch) -> None
     result = handle_maintenance_event(event)
 
     assert result == {"ok": False, "scheduler_enable_ready": False, "blockers": []}
+    assert calls == [event]
+
+
+def test_maintenance_routes_stock_universe_seed_operation(monkeypatch) -> None:
+    calls = []
+
+    def fake_seed(event):
+        calls.append(event)
+        return {"ok": True, "operation": "seed_stock_universe"}
+
+    monkeypatch.setattr("app.maintenance.seed_stock_universe_from_event", fake_seed)
+
+    event = {
+        "stockbrief_operation": "seed_stock_universe",
+        "tickers": ["005930"],
+    }
+    result = handle_maintenance_event(event)
+
+    assert result == {"ok": True, "operation": "seed_stock_universe"}
     assert calls == [event]
 
 

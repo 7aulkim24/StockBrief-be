@@ -246,11 +246,21 @@ def test_candidate_service_prefers_requested_score_version(
     current = seeded_session.scalars(
         select(RecommendationScore).where(RecommendationScore.ticker == "005930")
     ).one()
-    materialize_recommendation_scores(
-        seeded_session,
-        as_of_date=date(2026, 6, 10),
-        tickers=["005930"],
+    seeded_session.add(
+        RecommendationScore(
+            ticker="005930",
+            as_of_date=date(2026, 6, 10),
+            score_version="selection-test-version",
+            total_score=Decimal("12.34"),
+            evidence_level=current.evidence_level,
+            component_scores=current.component_scores,
+            evidence_count=current.evidence_count,
+            missing_data=current.missing_data,
+            data_freshness={"as_of": "2026-06-10"},
+            is_candidate_eligible=True,
+        )
     )
+    seeded_session.commit()
 
     _, selected = CandidateService(seeded_session).candidate_row(
         "005930",

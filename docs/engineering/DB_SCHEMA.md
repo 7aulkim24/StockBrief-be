@@ -150,7 +150,7 @@ Stores daily price and liquidity metrics.
 | `change_rate` | numeric | no | `1.23` | Percent. |
 | `volatility_20d` | numeric | no | `0.21` | 20-day realized volatility. |
 | `momentum_20d` | numeric | no | `0.08` | 20-day return ratio. |
-| `source` | text | yes | `KRX_SEED` | Provider or seed source. |
+| `source` | text | yes | `KRX` | Provider source. |
 | `created_at` | timestamptz | yes | `2026-06-09T09:00:00Z` | Inserted time. |
 
 ### source_documents

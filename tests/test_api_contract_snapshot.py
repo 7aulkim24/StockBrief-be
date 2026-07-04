@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.seed.mock_data import SCORE_VERSION as SEED_SCORE_VERSION
+from app.services.recommendation.engine import SCORE_VERSION
 
 
 EXPECTED_API_PATHS = {
@@ -142,7 +142,7 @@ def test_current_public_score_contract_excludes_future_materializer_fields(
         assert "score_version" not in properties
 
 
-def test_seed_public_stock_score_version_baseline(
+def test_public_stock_score_version_uses_factor_rank_baseline(
     seeded_api_client: TestClient,
 ) -> None:
     candidates_response = seeded_api_client.get("/v1/stocks/candidates")
@@ -152,5 +152,5 @@ def test_seed_public_stock_score_version_baseline(
     assert detail_response.status_code == 200
     candidate = candidates_response.json()["data"]["items"][0]
     detail = detail_response.json()["data"]
-    assert candidate["score"]["version"] == SEED_SCORE_VERSION
-    assert detail["score"]["version"] == SEED_SCORE_VERSION
+    assert candidate["score"]["version"] == SCORE_VERSION
+    assert detail["score"]["version"] == SCORE_VERSION

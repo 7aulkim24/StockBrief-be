@@ -137,6 +137,20 @@ def test_materializer_ignores_legacy_mock_evidence_rows(
             metadata_={"provider": "NAVER_NEWS"},
         )
     )
+    seeded_session.add(
+        EvidenceChunk(
+            evidence_id="evXmock_005930_news",
+            ticker="005930",
+            source_document_id=source.id,
+            evidence_type="news_attention",
+            chunk_text="similarly named evidence should still be scored",
+            source_url=source.source_url,
+            published_at=fetched_at,
+            fetched_at=fetched_at,
+            confidence=Decimal("0.9900"),
+            metadata_={"provider": "NAVER_NEWS"},
+        )
+    )
     seeded_session.commit()
 
     materialize_recommendation_scores(
@@ -160,3 +174,4 @@ def test_materializer_ignores_legacy_mock_evidence_rows(
 
     assert "ev_mock_005930_news" not in component_evidence
     assert "ev_mock_005930_news" not in reason_evidence
+    assert "evXmock_005930_news" in component_evidence

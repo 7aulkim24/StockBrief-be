@@ -525,6 +525,7 @@ class CandidateService:
             .where(
                 EvidenceChunk.ticker.in_(tickers),
                 SourceDocument.source_type.in_(["news", "disclosure"]),
+                ~EvidenceChunk.evidence_id.startswith("ev_mock_", autoescape=True),
             )
         ).all()
         for chunk, source in rows:

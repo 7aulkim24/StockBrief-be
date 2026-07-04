@@ -329,6 +329,68 @@ def test_recommendation_and_score_overlay_live_evidence_freshness(
         assert payload["data_freshness"]["live_evidence_latest_at"] == published_at.isoformat()
 
 
+def test_recommendation_and_evidence_api_hide_legacy_mock_evidence(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    published_at = datetime(2026, 6, 22, 6, 16, tzinfo=timezone.utc)
+    mock_published_at = datetime(2026, 6, 23, 6, 16, tzinfo=timezone.utc)
+    live_count = _replace_live_evidence_chunks(
+        seeded_session,
+        ticker="005930",
+        published_at=published_at,
+    )
+    mock_source = SourceDocument(
+        ticker="005930",
+        source_type="news",
+        source_name="NAVER_NEWS",
+        source_url="https://news.example/mock",
+        external_id="legacy-mock-news-api",
+        title="legacy mock evidence",
+        published_at=mock_published_at,
+        fetched_at=mock_published_at,
+        content_hash="legacy-mock-news-api",
+        raw_content="{}",
+        metadata_={"provider": "NAVER_NEWS"},
+    )
+    seeded_session.add(mock_source)
+    seeded_session.flush()
+    seeded_session.add(
+        EvidenceChunk(
+            evidence_id="ev_mock_005930_news_api",
+            ticker="005930",
+            source_document_id=mock_source.id,
+            evidence_type="news",
+            chunk_text="legacy mock evidence should stay hidden",
+            source_url=mock_source.source_url,
+            published_at=mock_published_at,
+            fetched_at=mock_published_at,
+            confidence=Decimal("0.9900"),
+            metadata_={"provider": "NAVER_NEWS"},
+        )
+    )
+    score = seeded_session.scalars(
+        select(RecommendationScore).where(RecommendationScore.ticker == "005930")
+    ).one()
+    score.evidence_count = 1
+    seeded_session.commit()
+
+    candidate_response = seeded_api_client.get("/v1/recommendations/candidates/005930")
+    evidence_response = seeded_api_client.get(
+        "/v1/stocks/005930/evidence",
+        params={"source_type": "NEWS", "limit": 20},
+    )
+
+    assert candidate_response.status_code == 200
+    candidate = candidate_response.json()
+    assert candidate["evidence_count"] == live_count
+    assert candidate["data_freshness"]["live_evidence_latest_at"] == published_at.isoformat()
+
+    assert evidence_response.status_code == 200
+    evidence_ids = [item["id"] for item in evidence_response.json()["data"]["items"]]
+    assert "ev_mock_005930_news_api" not in evidence_ids
+
+
 def test_recommendation_endpoints_do_not_emit_prohibited_korean_terms(
     seeded_api_client: TestClient,
 ) -> None:

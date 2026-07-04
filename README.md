@@ -10,9 +10,9 @@ StockBrief는 한국 국내 주식 추천 후보 서비스다. 이 레포는 투
 | --- | --- |
 | `app/` | FastAPI 애플리케이션 (라우트, 모델, 서비스) |
 | `app/services/recommendation/` | 결정론적 스코어 엔진 (8개 컴포넌트) |
-| `app/services/external/` | OpenDART, NAVER 어댑터, 캐시, 로거 |
+| `app/services/external/` | OpenDART, NAVER, KRX 어댑터, 캐시, 로거 |
 | `app/services/chat/` | AI 설명 컴포저 (채점 없음) |
-| `app/seed/` | 목업 시드 데이터 |
+| `app/seed/` | 종목 universe master 시드 |
 | `tests/` | pytest 테스트 스위트 |
 | `migrations/` | Alembic DB 마이그레이션 |
 | `infra/terraform/` | AWS 인프라 코드 |
@@ -67,9 +67,14 @@ uv run alembic downgrade -1
 
 ## 시드 데이터
 
+종목 master와 OpenDART 식별자만 적재한다. 추천 점수, 근거, 가격은 provider ingestion과 materializer가 생성한다.
+
 ```bash
 uv run alembic upgrade head
-uv run python -m app.seed.seed_mock_data
+uv run stockbrief-seed-stock-universe
+uv run python scripts/check_ingestion_smoke.py \
+  --source-date 2026-06-27 \
+  --run-provider-ingest
 ```
 
 로컬 API 확인:

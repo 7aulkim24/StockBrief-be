@@ -36,6 +36,10 @@ PROHIBITED_KOREAN_OUTPUT_TERMS = [
 ]
 
 
+def test_settings_default_model_stays_prior_approved_until_claude_access() -> None:
+    assert Settings().bedrock_chat_model_id == "apac.amazon.nova-micro-v1:0"
+
+
 def _flatten_text(value: Any) -> str:
     if isinstance(value, Mapping):
         return "\n".join(_flatten_text(item) for item in value.values())

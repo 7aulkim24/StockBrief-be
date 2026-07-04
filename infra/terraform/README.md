@@ -737,7 +737,7 @@ For inference profile IDs, the Lambda policy is split into two statements:
 - the associated foundation model ARNs can be invoked only when the request
   context includes the configured `bedrock:InferenceProfileArn`.
 
-The default `apac.anthropic.claude-3-5-sonnet-20241022-v2:0` profile currently routes to
+The Claude target `apac.anthropic.claude-3-5-sonnet-20241022-v2:0` profile currently routes to
 `ap-southeast-2`, `ap-northeast-1`, `ap-south-1`, `ap-northeast-2`,
 `ap-southeast-1`, and `ap-northeast-3`. If you change
 `bedrock_chat_model_id` to another inference profile, update

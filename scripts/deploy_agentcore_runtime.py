@@ -49,7 +49,7 @@ def _runtime_environment(tfvars: dict[str, Any]) -> dict[str, str]:
         "APP_ENV": str(tfvars["environment"]),
         "SERVICE_NAME": "stockbrief-agent",
         "BEDROCK_CHAT_MODEL_ID": str(
-            tfvars.get("bedrock_chat_model_id", "apac.anthropic.claude-3-5-sonnet-20241022-v2:0")
+            tfvars.get("bedrock_chat_model_id", "apac.amazon.nova-micro-v1:0")
         ),
         "BEDROCK_CHAT_REGION": bedrock_region,
         "BEDROCK_CHAT_MAX_TOKENS": str(tfvars.get("bedrock_chat_max_tokens", 700)),

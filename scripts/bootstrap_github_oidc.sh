@@ -800,7 +800,7 @@ profile = {
         "http://localhost:3001,http://127.0.0.1:3001"
     ),
     "chat_provider": "mock",
-    "bedrock_chat_model_id": "apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "bedrock_chat_model_id": "apac.amazon.nova-micro-v1:0",
     "bedrock_chat_max_tokens": 1000,
     "enable_amplify": False,
     "amplify_repository_url": "https://github.com/80-hours-a-week/StockBrief-fe",

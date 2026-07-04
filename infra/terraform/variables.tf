@@ -65,7 +65,7 @@ variable "chat_provider" {
 variable "bedrock_chat_model_id" {
   description = "Foundation model ID or inference profile ID used by the direct Bedrock chat provider when chat_provider is bedrock."
   type        = string
-  default     = "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
+  default     = "apac.amazon.nova-micro-v1:0"
 }
 
 variable "bedrock_chat_region" {

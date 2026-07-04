@@ -156,6 +156,17 @@ def test_agentcore_runtime_environment_matches_tfvars() -> None:
     assert env["AGENTCORE_RUNTIME_USE_DEV_MODEL"] == "false"
 
 
+def test_agentcore_runtime_environment_default_model_stays_prior_approved() -> None:
+    env = _runtime_environment(
+        {
+            "environment": "dev-owen",
+            "aws_region": "ap-northeast-2",
+        }
+    )
+
+    assert env["BEDROCK_CHAT_MODEL_ID"] == "apac.amazon.nova-micro-v1:0"
+
+
 def test_write_tfvars_preserves_valid_json(tmp_path: Path) -> None:
     path = tmp_path / "deploy.auto.tfvars.json"
     _write_tfvars(path, {"environment": "dev-owen"})

@@ -287,7 +287,8 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     assert 'variable "bedrock_chat_model_id"' in variables_tf
     assert 'variable "bedrock_chat_region"' in variables_tf
     assert 'chat_provider           = "mock"' in dev_tfvars
-    assert 'bedrock_chat_model_id   = "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"' in dev_tfvars
+    assert 'default     = "apac.amazon.nova-micro-v1:0"' in variables_tf
+    assert 'bedrock_chat_model_id   = "apac.amazon.nova-micro-v1:0"' in dev_tfvars
 
     assert "CHAT_PROVIDER" in root_main_tf
     assert "BEDROCK_CHAT_MODEL_ID" in root_main_tf
@@ -322,6 +323,7 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     assert "bedrock_chat_inference_profile_extra_foundation_model_arns" in terraform_readme
     assert "ap-southeast-2" in terraform_readme
     assert "provider on `mock`" in terraform_readme
+    assert "Claude target `apac.anthropic.claude-3-5-sonnet-20241022-v2:0` profile" in terraform_readme
     assert "reviewed Claude baseline for direct Bedrock and AgentCore validation" in terraform_readme
     assert "completed the Anthropic use-case access step" in terraform_readme
     assert "AgentCore Runtime with this Claude model" in terraform_readme
@@ -332,7 +334,7 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     assert "The #204 post-merge deployed `/v1/chat` evidence returned HTTP 200" in terraform_readme
     assert "repeat both the redacted direct Bedrock smoke" in terraform_readme
     assert deploy_tfvars["chat_provider"] == "bedrock"
-    assert deploy_tfvars["bedrock_chat_model_id"] == "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
+    assert deploy_tfvars["bedrock_chat_model_id"] == "apac.amazon.nova-micro-v1:0"
     assert deploy_tfvars["bedrock_chat_region"] == ""
     assert deploy_tfvars["bedrock_chat_inference_profile_foundation_model_regions"] == [
         "ap-southeast-2",

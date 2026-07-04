@@ -122,7 +122,10 @@ class AgentCoreChatProvider:
         try:
             _validate_answer_citations(
                 answer=answer,
-                allowed_evidence_ids=set(baseline.used_evidence_ids),
+                allowed_evidence_ids=_agentcore_allowed_evidence_ids(
+                    request=request,
+                    baseline=baseline,
+                ),
             )
         except ChatProviderUnavailable as exc:
             _log_agentcore_guard_failure(
@@ -205,6 +208,8 @@ class AgentCoreChatProvider:
                 agentRuntimeArn=self.runtime_arn,
                 runtimeSessionId=_agentcore_runtime_session_id(payload),
                 payload=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                contentType="application/json",
+                accept="application/json",
                 qualifier=self.qualifier,
             )
             body = response["response"].read()
@@ -232,15 +237,35 @@ def _agentcore_runtime_payload(
     request: ChatProviderInput,
     baseline: ChatResponse,
 ) -> dict[str, Any]:
+    allowed_evidence_ids = set(baseline.used_evidence_ids)
+    evidence = (
+        [item for item in request.evidence if item.id in allowed_evidence_ids]
+        if allowed_evidence_ids
+        else []
+    )
     return {
         "input": {
             "message": request.message,
             "ticker": request.candidate.ticker,
             "candidate": request.candidate.model_dump(mode="json"),
-            "evidence": [item.model_dump(mode="json") for item in request.evidence],
+            "evidence": [item.model_dump(mode="json") for item in evidence],
             "baseline": baseline.model_dump(mode="json"),
         }
     }
+
+
+def _agentcore_allowed_evidence_ids(
+    *,
+    request: ChatProviderInput,
+    baseline: ChatResponse,
+) -> set[str]:
+    evidence_ids = set(baseline.used_evidence_ids)
+    evidence_ids.update(item.id for item in request.evidence)
+    for component in request.candidate.score_components:
+        evidence_ids.update(component.evidence_ids)
+    for reason in request.candidate.recommendation_reasons:
+        evidence_ids.update(reason.evidence_ids)
+    return evidence_ids
 
 
 def _agentcore_runtime_session_id(payload: dict[str, Any]) -> str:

@@ -7,7 +7,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, event, select
 from sqlalchemy.orm import Session
 
-from app.orm import EvidenceChunk, RecommendationScore, RiskSignal, SourceDocument
+from app.orm import (
+    EvidenceChunk,
+    RecommendationReason,
+    RecommendationScore,
+    RiskSignal,
+    SourceDocument,
+)
 from app.services.candidate_service import CandidateService
 from app.services.recommendation.materializer import materialize_recommendation_scores
 
@@ -186,7 +192,7 @@ def test_get_recommendation_candidate_detail(
     assert candidate["risk_tags"]
 
 
-def test_candidate_api_reads_latest_score_snapshot(
+def test_candidate_api_defaults_to_current_score_version(
     seeded_api_client: TestClient,
     seeded_session: Session,
 ) -> None:
@@ -229,15 +235,14 @@ def test_candidate_api_reads_latest_score_snapshot(
 
     assert detail_response.status_code == 200
     detail = detail_response.json()
-    assert detail["recommendation_score"] == 12.34
-    assert detail["missing_data"] == ["selection.inputs"]
-    assert detail["data_freshness"]["as_of"] == "2026-06-10"
+    assert detail["recommendation_score"] == float(current.total_score)
+    assert detail["data_freshness"]["as_of"] == current.data_freshness["as_of"]
 
     assert list_response.status_code == 200
     items = list_response.json()["items"]
     selected = [item for item in items if item["ticker"] == "005930"]
     assert len(selected) == 1
-    assert selected[0]["recommendation_score"] == 12.34
+    assert selected[0]["recommendation_score"] == float(current.total_score)
 
 
 def test_candidate_service_prefers_requested_score_version(
@@ -328,6 +333,87 @@ def test_recommendation_and_score_overlay_live_evidence_freshness(
     for payload in [candidate_response.json(), score_response.json()]:
         assert payload["evidence_count"] == live_count
         assert payload["data_freshness"]["live_evidence_latest_at"] == published_at.isoformat()
+
+
+def test_recommendation_and_evidence_api_hide_legacy_mock_evidence(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    published_at = datetime(2026, 6, 22, 6, 16, tzinfo=timezone.utc)
+    mock_published_at = datetime(2026, 6, 23, 6, 16, tzinfo=timezone.utc)
+    live_count = _replace_live_evidence_chunks(
+        seeded_session,
+        ticker="005930",
+        published_at=published_at,
+    )
+    mock_source = SourceDocument(
+        ticker="005930",
+        source_type="news",
+        source_name="NAVER_NEWS",
+        source_url="https://news.example/mock",
+        external_id="legacy-mock-news-api",
+        title="legacy mock evidence",
+        published_at=mock_published_at,
+        fetched_at=mock_published_at,
+        content_hash="legacy-mock-news-api",
+        raw_content="{}",
+        metadata_={"provider": "NAVER_NEWS"},
+    )
+    seeded_session.add(mock_source)
+    seeded_session.flush()
+    seeded_session.add(
+        EvidenceChunk(
+            evidence_id="ev_mock_005930_news_api",
+            ticker="005930",
+            source_document_id=mock_source.id,
+            evidence_type="news",
+            chunk_text="legacy mock evidence should stay hidden",
+            source_url=mock_source.source_url,
+            published_at=mock_published_at,
+            fetched_at=mock_published_at,
+            confidence=Decimal("0.9900"),
+            metadata_={"provider": "NAVER_NEWS"},
+        )
+    )
+    score = seeded_session.scalars(
+        select(RecommendationScore).where(RecommendationScore.ticker == "005930")
+    ).one()
+    score.evidence_count = 1
+    component_scores = [dict(component) for component in score.component_scores]
+    component_scores[0] = {
+        **component_scores[0],
+        "evidence_ids": ["ev_mock_005930_news_api", "ev_live_news_005930"],
+    }
+    score.component_scores = component_scores
+    seeded_session.add(
+        RecommendationReason(
+            reason_id="rsn_005930_legacy_mock_api",
+            recommendation_score_id=score.id,
+            ticker="005930",
+            component="news_attention",
+            summary="legacy mock references should stay hidden",
+            evidence_ids=["ev_mock_005930_news_api", "ev_live_news_005930"],
+            source_document_ids=[str(mock_source.id), "live-source"],
+        )
+    )
+    seeded_session.commit()
+
+    candidate_response = seeded_api_client.get("/v1/recommendations/candidates/005930")
+    evidence_response = seeded_api_client.get(
+        "/v1/stocks/005930/evidence",
+        params={"source_type": "NEWS", "limit": 20},
+    )
+
+    assert candidate_response.status_code == 200
+    candidate = candidate_response.json()
+    assert candidate["evidence_count"] == live_count
+    assert candidate["data_freshness"]["live_evidence_latest_at"] == published_at.isoformat()
+    assert "ev_mock_005930_news_api" not in _flatten_text(candidate)
+    assert "ev_live_news_005930" in _flatten_text(candidate)
+
+    assert evidence_response.status_code == 200
+    evidence_ids = [item["id"] for item in evidence_response.json()["data"]["items"]]
+    assert "ev_mock_005930_news_api" not in evidence_ids
 
 
 def test_recommendation_endpoints_do_not_emit_prohibited_korean_terms(

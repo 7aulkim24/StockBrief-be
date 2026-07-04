@@ -153,6 +153,7 @@ class EvidenceService:
             .where(
                 EvidenceChunk.ticker == ticker,
                 SourceDocument.source_type.in_(source_types),
+                ~EvidenceChunk.evidence_id.startswith("ev_mock_", autoescape=True),
             )
             .order_by(
                 func.date(

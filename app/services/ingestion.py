@@ -1236,6 +1236,14 @@ def _check_provider_endpoint_egress(
             "status_code": response.status_code,
             "note": "Provider endpoint returned an HTTP response.",
         }
+    except json.JSONDecodeError:
+        return {
+            "reachable": True,
+            "endpoint": endpoint,
+            "status_code": None,
+            "error_code": "JSONDecodeError",
+            "note": "Provider endpoint returned a non-JSON HTTP response.",
+        }
     except Exception as exc:
         status_code = getattr(exc, "code", None)
         if isinstance(status_code, int):

@@ -32,11 +32,13 @@ from app.orm import (
     Stock,
 )
 from app.services.response_helpers import pagination
+from app.services.recommendation.engine import SCORE_VERSION
 from app.ticker import validate_ticker
 
 logger = logging.getLogger(__name__)
 
 DISCLAIMER = "공개 데이터 기반 검토 후보이며 최종 투자 판단은 사용자에게 있습니다."
+LEGACY_MOCK_EVIDENCE_PREFIX = "ev_mock_"
 EVIDENCE_LEVEL_MAP = {
     "strong": "strong",
     "medium": "medium",
@@ -401,6 +403,7 @@ class CandidateService:
         ]
 
     def _selected_scores_subquery(self, score_version: str | None):
+        selected_score_version = score_version or SCORE_VERSION
         statement = select(
             RecommendationScore.id.label("score_id"),
             func.row_number()
@@ -414,8 +417,7 @@ class CandidateService:
             )
             .label("score_rank"),
         )
-        if score_version:
-            statement = statement.where(RecommendationScore.score_version == score_version)
+        statement = statement.where(RecommendationScore.score_version == selected_score_version)
         return statement.subquery()
 
     def _candidate_responses(
@@ -524,6 +526,7 @@ class CandidateService:
             .where(
                 EvidenceChunk.ticker.in_(tickers),
                 SourceDocument.source_type.in_(["news", "disclosure"]),
+                ~EvidenceChunk.evidence_id.startswith("ev_mock_", autoescape=True),
             )
         ).all()
         for chunk, source in rows:
@@ -614,8 +617,8 @@ def _candidate_response_from_loaded(
                 reason_id=reason.reason_id,
                 component=reason.component,
                 summary=reason.summary,
-                evidence_ids=list(reason.evidence_ids or []),
-                source_document_ids=list(reason.source_document_ids or []),
+                evidence_ids=_public_evidence_ids(reason.evidence_ids or []),
+                source_document_ids=_public_source_document_ids(reason),
             )
             for reason in reasons
         ],
@@ -734,7 +737,7 @@ def _score_components(components: list[dict[str, object]]) -> list[ScoreComponen
             weighted_score=_float(component.get("weighted_score")),
             reason=str(component.get("reason", "공개 데이터 기준 검토 포인트입니다.")),
             input_refs=[str(item) for item in component.get("input_refs", [])],
-            evidence_ids=[str(item) for item in component.get("evidence_ids", [])],
+            evidence_ids=_public_evidence_ids(component.get("evidence_ids", [])),
         )
         for component in components
     ]
@@ -748,6 +751,26 @@ def _score_components(components: list[dict[str, object]]) -> list[ScoreComponen
 
 def _evidence_level(value: str) -> str:
     return EVIDENCE_LEVEL_MAP.get(value, "weak")
+
+
+def _public_evidence_ids(evidence_ids: object) -> list[str]:
+    return [
+        evidence_id
+        for evidence_id in [str(item) for item in evidence_ids or []]
+        if not evidence_id.startswith(LEGACY_MOCK_EVIDENCE_PREFIX)
+    ]
+
+
+def _public_source_document_ids(reason: RecommendationReason) -> list[str]:
+    evidence_ids = [str(item) for item in reason.evidence_ids or []]
+    source_document_ids = [str(item) for item in reason.source_document_ids or []]
+    if len(evidence_ids) != len(source_document_ids):
+        return [] if not _public_evidence_ids(evidence_ids) else source_document_ids
+    return [
+        source_document_id
+        for evidence_id, source_document_id in zip(evidence_ids, source_document_ids, strict=True)
+        if not evidence_id.startswith(LEGACY_MOCK_EVIDENCE_PREFIX)
+    ]
 
 
 def _optional_float(value: object) -> float | None:

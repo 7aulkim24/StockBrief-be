@@ -102,6 +102,33 @@ def test_agentcore_provider_rechecks_runtime_answer(
     )
 
 
+def test_agentcore_provider_ignores_non_evidence_bracket_labels(
+    seeded_session: Session,
+) -> None:
+    request = _provider_input(seeded_session)
+    baseline = compose_chat_answer(
+        message=request.message,
+        candidate=request.candidate,
+        evidence=request.evidence,
+    )
+    evidence_id = baseline.used_evidence_ids[0]
+
+    provider = AgentCoreChatProvider(
+        runtime_url="http://runtime.local",
+        runtime_invoker=lambda payload: {
+            "status": "success",
+            "response": {
+                "answer": f"[KOSPI] 저장된 근거 기준 설명입니다. [{evidence_id}]",
+                "trace": {"selected_tools": ["get_candidate"], "citation_ids": [evidence_id]},
+            },
+        },
+    )
+
+    response = provider.compose(request)
+
+    assert response.answer.endswith(f"[{evidence_id}]")
+
+
 def test_agentcore_provider_blocks_context_citation_not_returned_to_client(
     seeded_session: Session,
 ) -> None:

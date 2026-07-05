@@ -44,8 +44,11 @@ data "aws_iam_policy_document" "agentcore_invoke" {
   count = var.agentcore_runtime_invoke_enabled ? 1 : 0
 
   statement {
-    actions   = ["bedrock-agentcore:InvokeAgentRuntime"]
-    resources = [var.agentcore_runtime_arn]
+    actions = ["bedrock-agentcore:InvokeAgentRuntime"]
+    resources = [
+      var.agentcore_runtime_arn,
+      "${var.agentcore_runtime_arn}/runtime-endpoint/*",
+    ]
   }
 }
 

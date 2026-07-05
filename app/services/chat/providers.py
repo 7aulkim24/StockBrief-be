@@ -559,7 +559,11 @@ def _validate_answer_citations(
 
 
 def _cited_evidence_ids(answer: str) -> set[str]:
-    cited_evidence_ids = set(EVIDENCE_ID_REFERENCE_PATTERN.findall(answer))
+    cited_evidence_ids = {
+        evidence_id
+        for evidence_id in EVIDENCE_ID_REFERENCE_PATTERN.findall(answer)
+        if evidence_id.startswith("ev_")
+    }
     for bracket_content in BRACKET_CONTENT_PATTERN.findall(answer):
         cited_evidence_ids.update(EVIDENCE_ID_TOKEN_PATTERN.findall(bracket_content))
     return cited_evidence_ids

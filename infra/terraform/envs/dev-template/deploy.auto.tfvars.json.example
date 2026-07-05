@@ -57,7 +57,7 @@
   "agentcore_runtime_manage_with_cloudformation": false,
   "agentcore_network_mode": "PUBLIC",
   "agentcore_runtime_timeout_seconds": 30,
-  "bedrock_chat_max_tokens": 2000,
+  "bedrock_chat_max_tokens": 1000,
   "enable_ingestion_scheduler": false,
   "ingestion_schedule_jobs": []
 }

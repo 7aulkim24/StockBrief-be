@@ -15,7 +15,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from app.services.chat.providers import PROHIBITED_MODEL_OUTPUT_TERMS
 
 
-DEFAULT_MODEL_ID = "apac.amazon.nova-micro-v1:0"
+DEFAULT_MODEL_ID = "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
 DEFAULT_PROMPT = (
     "한국어로 한 문장만 답하세요. "
     "StockBrief Bedrock chat provider smoke check."

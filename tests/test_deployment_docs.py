@@ -157,7 +157,7 @@ def test_bedrock_chat_smoke_runbook_documents_redacted_validation() -> None:
     ).read_text(encoding="utf-8")
 
     assert "scripts/check_bedrock_chat_smoke.py" in terraform_readme
-    assert "--model-id apac.amazon.nova-micro-v1:0" in terraform_readme
+    assert "--model-id apac.anthropic.claude-3-5-sonnet-20241022-v2:0" in terraform_readme
     assert "scripts/check_deployed_chat_smoke.py" in terraform_readme
     assert "scripts/check_deployed_chat_smoke.py" in deployment_doc
     assert "`answer_sha256_prefix`" in terraform_readme

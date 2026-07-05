@@ -254,7 +254,9 @@ def test_agentcore_runtime_dev_invocation_records_tool_trace(
                     "message": request.message,
                     "ticker": request.candidate.ticker,
                     "candidate": request.candidate.model_dump(mode="json"),
-                    "evidence": [item.model_dump(mode="json") for item in request.evidence],
+                    "evidence": [
+                        item.model_dump(mode="json") for item in request.evidence
+                    ],
                     "baseline": baseline.model_dump(mode="json"),
                 }
             },
@@ -268,10 +270,67 @@ def test_agentcore_runtime_dev_invocation_records_tool_trace(
     payload = response.json()
     trace = payload["response"]["trace"]
     assert payload["status"] == "success"
+    assert trace["model_provider"] == "dev"
+    assert trace["model_id"] == "stockbrief-dev-tool-model"
     assert "get_candidate" in trace["selected_tools"]
     assert trace["tool_calls"][0]["status"] == "success"
     assert trace["citation_ids"] == baseline.used_evidence_ids
     assert trace["metrics"]["summary"]["tool_usage"]["get_candidate"]
+
+
+def test_agentcore_runtime_bedrock_trace_records_configured_model(
+    seeded_session: Session,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("strands")
+    import app.agentcore_runtime as runtime
+
+    class FakeBedrockModel:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def __call__(self, *args, **kwargs):
+            return "저장된 근거 기준 설명입니다."
+
+    request = _provider_input(seeded_session)
+    baseline = compose_chat_answer(
+        message=request.message,
+        candidate=request.candidate,
+        evidence=request.evidence,
+    )
+    monkeypatch.setenv("AGENTCORE_RUNTIME_USE_DEV_MODEL", "false")
+    monkeypatch.setenv(
+        "BEDROCK_CHAT_MODEL_ID",
+        "apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
+    )
+    monkeypatch.setattr(runtime, "BedrockModel", FakeBedrockModel)
+    monkeypatch.setattr(runtime, "Agent", FakeAgent)
+    get_settings.cache_clear()
+    try:
+        client = TestClient(runtime.app)
+        response = client.post(
+            "/invocations",
+            json={
+                "input": {
+                    "message": request.message,
+                    "ticker": request.candidate.ticker,
+                    "candidate": request.candidate.model_dump(mode="json"),
+                    "evidence": [item.model_dump(mode="json") for item in request.evidence],
+                    "baseline": baseline.model_dump(mode="json"),
+                }
+            },
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+    trace = response.json()["response"]["trace"]
+    assert trace["model_provider"] == "bedrock"
+    assert trace["model_id"] == "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
 
 
 def _provider_input(

@@ -803,6 +803,8 @@ profile = {
         "http://localhost:3001,http://127.0.0.1:3001"
     ),
     "chat_provider": "mock",
+    "bedrock_chat_model_id": "apac.amazon.nova-micro-v1:0",
+    "bedrock_chat_max_tokens": 1000,
     "enable_amplify": False,
     "amplify_repository_url": "https://github.com/80-hours-a-week/StockBrief-fe",
     "amplify_branch_name": "main",
@@ -848,7 +850,6 @@ profile = {
     "agentcore_runtime_endpoint_name": "",
     "agentcore_network_mode": "PUBLIC",
     "agentcore_runtime_timeout_seconds": 30,
-    "bedrock_chat_max_tokens": 2000,
     "enable_ingestion_scheduler": False,
     "ingestion_schedule_jobs": [],
 }

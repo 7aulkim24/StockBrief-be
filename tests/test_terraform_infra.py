@@ -287,6 +287,7 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     assert 'variable "bedrock_chat_model_id"' in variables_tf
     assert 'variable "bedrock_chat_region"' in variables_tf
     assert 'chat_provider           = "mock"' in dev_tfvars
+    assert 'default     = "apac.amazon.nova-micro-v1:0"' in variables_tf
     assert 'bedrock_chat_model_id   = "apac.amazon.nova-micro-v1:0"' in dev_tfvars
 
     assert "CHAT_PROVIDER" in root_main_tf
@@ -322,8 +323,10 @@ def test_direct_bedrock_chat_provider_is_conditionally_wired() -> None:
     assert "bedrock_chat_inference_profile_extra_foundation_model_arns" in terraform_readme
     assert "ap-southeast-2" in terraform_readme
     assert "provider on `mock`" in terraform_readme
-    assert "current dev profile has Bedrock direct chat enabled" in terraform_readme
-    assert "answer_sha256_prefix=246e9a43b265" in terraform_readme
+    assert "Claude target `apac.anthropic.claude-3-5-sonnet-20241022-v2:0` profile" in terraform_readme
+    assert "reviewed Claude baseline for direct Bedrock and AgentCore validation" in terraform_readme
+    assert "completed the Anthropic use-case access step" in terraform_readme
+    assert "AgentCore Runtime with this Claude model" in terraform_readme
     assert "After applying a profile that switches the deployed API" in terraform_readme
     assert "existing `/v1/chat` response contract is preserved" in terraform_readme
     assert "citation guard remains active" in terraform_readme

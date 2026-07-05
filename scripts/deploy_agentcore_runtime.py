@@ -218,13 +218,14 @@ def _deploy_runtime(
     if not container_uri:
         raise ValueError("agentcore_runtime_container_uri is required.")
 
+    runtime_env = _runtime_environment(tfvars)
     request = {
         "agentRuntimeArtifact": {
             "containerConfiguration": {"containerUri": container_uri}
         },
         "roleArn": role_arn,
         "networkConfiguration": _network_configuration(tfvars),
-        "environmentVariables": _runtime_environment(tfvars),
+        "environmentVariables": runtime_env,
         "requestHeaderConfiguration": {
             "requestHeaderAllowlist": ["x-correlation-id", "x-user-id"]
         },
@@ -261,6 +262,7 @@ def _deploy_runtime(
         "runtime_id": runtime_id,
         "endpoint_name": endpoint_name,
         "image_uri": container_uri,
+        "model_id": runtime_env["BEDROCK_CHAT_MODEL_ID"],
         "version": runtime_version,
     }
 

@@ -43,8 +43,8 @@ def _tfvars(**overrides):
         "agentcore_runtime_container_uri": IMAGE_URI,
         "agentcore_network_mode": "PUBLIC",
         "bedrock_chat_region": "",
-        "bedrock_chat_model_id": "apac.amazon.nova-micro-v1:0",
-        "bedrock_chat_max_tokens": 2000,
+        "bedrock_chat_model_id": "apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "bedrock_chat_max_tokens": 1000,
         "bedrock_chat_temperature": 0.2,
         "bedrock_chat_timeout_seconds": 8,
         "agentcore_runtime_max_turns": 4,
@@ -140,8 +140,8 @@ def test_agentcore_runtime_environment_matches_tfvars() -> None:
             "environment": "dev-owen",
             "aws_region": "ap-northeast-2",
             "bedrock_chat_region": "",
-            "bedrock_chat_model_id": "apac.amazon.nova-micro-v1:0",
-            "bedrock_chat_max_tokens": 2000,
+            "bedrock_chat_model_id": "apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "bedrock_chat_max_tokens": 1000,
             "bedrock_chat_temperature": 0.2,
             "bedrock_chat_timeout_seconds": 8,
             "agentcore_runtime_max_turns": 4,
@@ -150,9 +150,21 @@ def test_agentcore_runtime_environment_matches_tfvars() -> None:
 
     assert env["APP_ENV"] == "dev-owen"
     assert env["SERVICE_NAME"] == "stockbrief-agent"
+    assert env["BEDROCK_CHAT_MODEL_ID"] == "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
     assert env["BEDROCK_CHAT_REGION"] == "ap-northeast-2"
-    assert env["BEDROCK_CHAT_MAX_TOKENS"] == "2000"
+    assert env["BEDROCK_CHAT_MAX_TOKENS"] == "1000"
     assert env["AGENTCORE_RUNTIME_USE_DEV_MODEL"] == "false"
+
+
+def test_agentcore_runtime_environment_default_model_stays_prior_approved() -> None:
+    env = _runtime_environment(
+        {
+            "environment": "dev-owen",
+            "aws_region": "ap-northeast-2",
+        }
+    )
+
+    assert env["BEDROCK_CHAT_MODEL_ID"] == "apac.amazon.nova-micro-v1:0"
 
 
 def test_write_tfvars_preserves_valid_json(tmp_path: Path) -> None:
@@ -228,8 +240,85 @@ def test_deploy_runtime_creates_runtime_and_endpoint_with_expected_payload() -> 
         "runtime_id": RUNTIME_ID,
         "endpoint_name": ENDPOINT_NAME,
         "image_uri": IMAGE_URI,
+        "model_id": "apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
         "version": "1",
     }
+
+
+def test_deploy_runtime_metadata_uses_default_model_when_tfvars_omits_model_id() -> None:
+    client = _client()
+    stubber = Stubber(client)
+    now = datetime(2026, 7, 4, tzinfo=UTC)
+    tfvars = _tfvars()
+    tfvars.pop("bedrock_chat_model_id")
+    expected_request = {
+        "agentRuntimeArtifact": {
+            "containerConfiguration": {"containerUri": IMAGE_URI}
+        },
+        "roleArn": ROLE_ARN,
+        "networkConfiguration": {"networkMode": "PUBLIC"},
+        "environmentVariables": _runtime_environment(tfvars),
+        "requestHeaderConfiguration": {
+            "requestHeaderAllowlist": ["x-correlation-id", "x-user-id"]
+        },
+    }
+    stubber.add_response("list_agent_runtimes", {"agentRuntimes": []}, {})
+    stubber.add_response(
+        "create_agent_runtime",
+        {
+            "agentRuntimeArn": RUNTIME_ARN,
+            "agentRuntimeId": RUNTIME_ID,
+            "agentRuntimeVersion": "1",
+            "createdAt": now,
+            "status": "CREATING",
+        },
+        {"agentRuntimeName": "stockbrief_dev_owen_agent", **expected_request},
+    )
+    stubber.add_response(
+        "get_agent_runtime",
+        _ready_runtime(),
+        {"agentRuntimeId": RUNTIME_ID},
+    )
+    stubber.add_client_error(
+        "get_agent_runtime_endpoint",
+        service_error_code="ResourceNotFoundException",
+        expected_params={"agentRuntimeId": RUNTIME_ID, "endpointName": ENDPOINT_NAME},
+    )
+    stubber.add_response(
+        "create_agent_runtime_endpoint",
+        {
+            "targetVersion": "1",
+            "agentRuntimeEndpointArn": ENDPOINT_ARN,
+            "agentRuntimeArn": RUNTIME_ARN,
+            "agentRuntimeId": RUNTIME_ID,
+            "endpointName": ENDPOINT_NAME,
+            "status": "CREATING",
+            "createdAt": now,
+        },
+        {
+            "agentRuntimeId": RUNTIME_ID,
+            "name": ENDPOINT_NAME,
+            "agentRuntimeVersion": "1",
+        },
+    )
+    stubber.add_response(
+        "get_agent_runtime_endpoint",
+        _ready_endpoint(),
+        {"agentRuntimeId": RUNTIME_ID, "endpointName": ENDPOINT_NAME},
+    )
+
+    with stubber:
+        metadata = _deploy_runtime(
+            client=client,
+            tfvars=tfvars,
+            role_arn=ROLE_ARN,
+            wait_seconds=1,
+        )
+
+    assert expected_request["environmentVariables"]["BEDROCK_CHAT_MODEL_ID"] == (
+        "apac.amazon.nova-micro-v1:0"
+    )
+    assert metadata["model_id"] == "apac.amazon.nova-micro-v1:0"
 
 
 def test_deploy_runtime_updates_existing_runtime_and_endpoint() -> None:
@@ -294,4 +383,5 @@ def test_deploy_runtime_updates_existing_runtime_and_endpoint() -> None:
 
     assert metadata["runtime_id"] == RUNTIME_ID
     assert metadata["endpoint_name"] == ENDPOINT_NAME
+    assert metadata["model_id"] == "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
     assert metadata["version"] == "2"

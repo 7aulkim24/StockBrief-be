@@ -18,7 +18,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import Settings
 from app.models import ChatCitation, ChatResponse
-from app.services.chat.composer import compose_chat_answer
+from app.services.chat.composer import compose_chat_answer, contains_hidden_reasoning
 from app.services.chat.providers import (
     ChatProviderInput,
     ChatProviderUnavailable,
@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 MIN_AGENTCORE_TIMEOUT_SECONDS = 1.0
 MAX_AGENTCORE_TIMEOUT_SECONDS = 30.0
+MAX_AGENTCORE_RUNTIME_ATTEMPTS = 2
 
 
 class AgentCoreChatProvider:
@@ -107,6 +108,14 @@ class AgentCoreChatProvider:
             raise ChatProviderUnavailable(
                 "AgentCore chat provider returned an empty answer."
             )
+        if contains_hidden_reasoning(answer):
+            _log_agentcore_guard_failure(
+                reason="hidden_reasoning",
+                started_at=started_at,
+                answer=answer,
+                trace=trace,
+            )
+            return baseline
         guard_result = _evaluate_prohibited_output(answer)
         if guard_result.blocked:
             _log_agentcore_guard_failure(
@@ -183,11 +192,23 @@ class AgentCoreChatProvider:
             )
 
     def _invoke_runtime(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if self.runtime_invoker is not None:
-            return self.runtime_invoker(payload)
-        if self.runtime_url:
-            return self._invoke_http_runtime(payload)
-        return self._invoke_aws_runtime(payload)
+        for attempt in range(1, MAX_AGENTCORE_RUNTIME_ATTEMPTS + 1):
+            try:
+                if self.runtime_invoker is not None:
+                    return self.runtime_invoker(payload)
+                if self.runtime_url:
+                    return self._invoke_http_runtime(payload)
+                return self._invoke_aws_runtime(payload)
+            except ChatProviderUnavailable:
+                if attempt >= MAX_AGENTCORE_RUNTIME_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "agentcore_chat_provider_runtime_retry provider=agentcore attempt=%s max_attempts=%s reason=runtime_request_failed",
+                    attempt,
+                    MAX_AGENTCORE_RUNTIME_ATTEMPTS,
+                )
+                time.sleep(0.2)
+        raise ChatProviderUnavailable("AgentCore chat provider request failed.")
 
     def _invoke_http_runtime(self, payload: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

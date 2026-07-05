@@ -33,10 +33,25 @@ CERTAINTY_TERMS = ("수익 보장", "보장", "확실", "무조건", "guaranteed
 MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(https?://[^)\s]+\)")
 MARKDOWN_BOLD_PATTERN = re.compile(r"\*\*([^*\n]+)\*\*")
 BARE_URL_PATTERN = re.compile(r"<?https?://\S+>?")
+REFERENCE_LABEL_PATTERN = re.compile(
+    r"(?:ev_[A-Za-z0-9_.:-]+|rsn_[A-Za-z0-9_.:-]+|(?:증거|근거)\s*(?:ID|요약|참조)|추천 이유\s*(?:ID|\d+))"
+)
 REFERENCE_BRACKET_PATTERN = re.compile(
-    r"\[[^\]]*(?:ev_[A-Za-z0-9_.:-]+|rsn_[A-Za-z0-9_.:-]+)[^\]]*\]"
+    rf"\[[^\]\n]*{REFERENCE_LABEL_PATTERN.pattern}[^\]\n]*\]"
 )
 EVIDENCE_LABEL_PATTERN = re.compile(r"\[(?:증거 요약|근거 요약)\]")
+DANGLING_REFERENCE_BRACKET_PATTERN = re.compile(r"\s*[\[\]]+\s*$")
+TRAILING_REFERENCE_PUNCTUATION_PATTERN = re.compile(r"(?:\s+[,;:])+\s*$")
+OPEN_REFERENCE_TAIL_PATTERN = re.compile(r"(?:\s+[,;:])?\s*[\[(][^\]\)]*$")
+EMPTY_PARENS_PATTERN = re.compile(r"\s*\(\s*\)")
+HIDDEN_REASONING_PATTERN = re.compile(
+    r"<\s*(?:thinking|reasoning|analysis)\b[^>]*>.*?(?:<\s*/\s*(?:thinking|reasoning|analysis)\s*>|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+PRESENTATION_ARTIFACT_PATTERN = re.compile(
+    r"<\s*(?:thinking|reasoning|analysis)\b|[\[\]]|,\s*,|\(\s*\)|등 여러 증거|에 대한 증거가 있습니다",
+    re.IGNORECASE,
+)
 
 
 def compose_chat_answer(
@@ -104,13 +119,39 @@ def evaluate_policy(message: str) -> PolicyDecision:
 
 
 def normalize_chat_answer(answer: str) -> str:
-    normalized = MARKDOWN_LINK_PATTERN.sub(r"[\1]", answer)
+    normalized = HIDDEN_REASONING_PATTERN.sub("", answer)
+    normalized = MARKDOWN_LINK_PATTERN.sub(_markdown_link_label, normalized)
     normalized = REFERENCE_BRACKET_PATTERN.sub("", normalized)
     normalized = EVIDENCE_LABEL_PATTERN.sub("", normalized)
     normalized = MARKDOWN_BOLD_PATTERN.sub(r"\1", normalized)
     normalized = BARE_URL_PATTERN.sub("", normalized)
-    lines = [re.sub(r"[ \t]{2,}", " ", line).rstrip() for line in normalized.splitlines()]
+    normalized = normalized.replace("[", "").replace("]", "")
+    lines = [_clean_chat_answer_line(line) for line in normalized.splitlines()]
     return "\n".join(lines).strip()
+
+
+def contains_hidden_reasoning(answer: str) -> bool:
+    return bool(HIDDEN_REASONING_PATTERN.search(answer))
+
+
+def has_chat_answer_artifacts(answer: str) -> bool:
+    return bool(PRESENTATION_ARTIFACT_PATTERN.search(answer))
+
+
+def _clean_chat_answer_line(line: str) -> str:
+    cleaned = re.sub(r"[ \t]{2,}", " ", line)
+    cleaned = EMPTY_PARENS_PATTERN.sub("", cleaned)
+    cleaned = OPEN_REFERENCE_TAIL_PATTERN.sub("", cleaned)
+    cleaned = DANGLING_REFERENCE_BRACKET_PATTERN.sub("", cleaned)
+    cleaned = TRAILING_REFERENCE_PUNCTUATION_PATTERN.sub("", cleaned)
+    return cleaned.rstrip()
+
+
+def _markdown_link_label(match: re.Match[str]) -> str:
+    label = match.group(1)
+    if REFERENCE_LABEL_PATTERN.search(label):
+        return ""
+    return label
 
 
 def _contains_any(value: str, terms: tuple[str, ...]) -> bool:

@@ -62,6 +62,42 @@ def test_agentcore_provider_aws_runtime_invocation_sets_json_content_type() -> N
     assert json.loads(client.request["payload"].decode("utf-8")) == payload
 
 
+def test_agentcore_provider_retries_transient_runtime_failure(
+    seeded_session: Session,
+) -> None:
+    request = _provider_input(seeded_session)
+    baseline = compose_chat_answer(
+        message=request.message,
+        candidate=request.candidate,
+        evidence=request.evidence,
+    )
+    evidence_id = baseline.used_evidence_ids[0]
+    attempts = 0
+
+    def transient_invoker(payload):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ChatProviderUnavailable("transient runtime failure")
+        return {
+            "status": "success",
+            "response": {
+                "answer": f"재시도 후 저장된 근거 기준 설명입니다. [{evidence_id}]",
+                "trace": {"selected_tools": ["get_candidate"], "citation_ids": [evidence_id]},
+            },
+        }
+
+    provider = AgentCoreChatProvider(
+        runtime_url="http://runtime.local",
+        runtime_invoker=transient_invoker,
+    )
+
+    response = provider.compose(request)
+
+    assert attempts == 2
+    assert response.answer.endswith(f"[{evidence_id}]")
+
+
 def test_agentcore_provider_rechecks_runtime_answer(
     seeded_session: Session,
 ) -> None:
@@ -191,6 +227,32 @@ def test_agentcore_provider_blocks_unsafe_runtime_answer(
 
     with pytest.raises(ChatProviderUnavailable, match="unsafe answer"):
         provider.compose(request)
+
+
+def test_agentcore_provider_falls_back_on_hidden_reasoning(
+    seeded_session: Session,
+) -> None:
+    request = _provider_input(seeded_session)
+    baseline = compose_chat_answer(
+        message=request.message,
+        candidate=request.candidate,
+        evidence=request.evidence,
+    )
+    provider = AgentCoreChatProvider(
+        runtime_url="http://runtime.local",
+        runtime_invoker=lambda payload: {
+            "status": "success",
+            "response": {
+                "answer": "<thinking>internal reasoning</thinking>사용자 답변입니다.",
+                "trace": {"selected_tools": ["get_candidate"]},
+            },
+        },
+    )
+
+    response = provider.compose(request)
+
+    assert response.answer == baseline.answer
+    assert response.citations == baseline.citations
 
 
 def test_agentcore_provider_blocks_broken_citation(

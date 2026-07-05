@@ -7,7 +7,7 @@ implementation because those were owned by other teammates.
 Audit date: 2026-07-05
 AWS account: `560271561793`
 Region: `ap-northeast-2`
-Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`, `#290`, `#292`, `#293`, `#303`
+Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`, `#290`, `#292`, `#293`, `#303`, `#305`
 
 Do not paste API keys, access tokens, secret values, raw provider payloads, raw
 model answers, user emails, watchlist item bodies, or chat titles into PR
@@ -28,9 +28,9 @@ evidence. Use the redacted helper outputs and summarize only status fields.
 
 | Category | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Latest main baseline | 완료 | BE `main` is at `be31b32` after BE #302; FE `main` is at `a7f1b9f` after FE #122. FE has open PR #123, so hosted FE evidence remains the FE #118/#122 main baseline until that PR is reviewed and merged. | Start all new BE work from latest `main`; re-run FE hosted smoke after FE #123 or any later FE runtime UI change merges. |
+| Latest main baseline | 완료 | BE `main` is at `4fc7f20` after BE #306; FE `main` is at `bc3dd1d` after FE #123. | Start all new work from latest `main`; re-run hosted smoke after any later FE runtime UI, auth callback, API base, or chat display change merges. |
 | Deploy profile source | 완료 | BE #252 made GitHub Environment `TFVARS_JSON` and `TF_BACKEND_CONFIG_HCL` the source of truth for `backend-dev-deploy`. | Keep runner-rendered tfvars/backend files out of the repository. |
-| Terraform apply | 완료 | Latest `backend-dev-deploy` run `28741696267` succeeded on BE `be31b32` after #302. Earlier runs `28730540713`, `28731075489`, and `28731527860` deployed #300/#301 AgentCore and Bedrock changes. | Inspect the deploy run after every merge or Environment tfvars change. |
+| Terraform apply | 완료 | Latest `backend-dev-deploy` run `28743421982` succeeded on BE `4fc7f20` after #306. Earlier runs `28730540713`, `28731075489`, and `28731527860` deployed #300/#301 AgentCore and Bedrock changes. | Inspect the deploy run after every merge or Environment tfvars change. |
 | API Gateway and Lambda API | 완료 | `GET /v1/health` returned `status=ok`, `service=stockbrief-api`, `environment=dev`. | Continue using deployed smoke before release or after resume. |
 | Recommendation API | 완료 | On 2026-07-05 the first post-#302 smoke found `count=0`. Running `seed_stock_universe` and `refresh_score_snapshots` for `005930`, `207940`, and `000660` restored score snapshots without external provider calls. Follow-up `GET /v1/recommendations/candidates?limit=3` returned `count=2`, first ticker `000660`, and included `005930`. | Re-run deployed API smoke after recommendation, ingestion, score materializer, or Lambda deploy changes. |
 | Recommendation quality | 완료 | `scripts/check_recommendation_quality_smoke.py --limit 5 --max-detail-tickers 3 --expected-ticker 005930 --expected-ticker 000660` returned `ok=true`; selected tickers `005930`, `000660`; each detail returned 8 score components with weight sum `100`; `risk_tags` arrays were present and empty; blockers `[]`. | Re-run before product-flow work that changes candidate quality or evidence joins. |
@@ -39,8 +39,8 @@ evidence. Use the redacted helper outputs and summarize only status fields.
 | FE live evidence visibility | 완료 | FE hosted evidence/watchlist/auth/search-page smoke returned `ok=true` with `/`, `/stocks/005930`, `/search?q=삼성전자`, `/watchlist`, `/account`, and `/auth/callback` all HTTP 200 and no missing page markers. | Re-run after FE detail/recommendation/search/watchlist/account UI, auth callback, API base, or Amplify deploy changes. |
 | RDS | 완료 | `stockbrief-dev-postgres` is available, PostgreSQL `16.13`, deletion protection `false`, backup retention `1`. | Stop RDS during inactive cost windows per `DEPLOYMENT_BOOTSTRAP.md`. |
 | RDS Proxy | 완료 | Terraform output `rds_proxy_endpoint` is empty and `enable_rds_proxy=false`. | Keep disabled until Lambda concurrency requires pooling. |
-| Bedrock direct provider | 완료 | `scripts/check_bedrock_chat_smoke.py` returned `ok=true` for `apac.amazon.nova-micro-v1:0` and `apac.anthropic.claude-3-5-sonnet-20241022-v2:0`; both returned `matched_terms=[]`. | Keep AgentCore Runtime optional until a runtime need is proven beyond direct Bedrock. |
-| Deployed chat explanation | 완료 | `scripts/check_deployed_chat_smoke.py` returned `ok=true`; allowed explanation returned `policy_action=ALLOW`, redirected advice request returned `policy_action=REDIRECT`, both had citation count `4`, disclaimer present, and `matched_terms=[]`. | Re-run after Lambda, IAM, Bedrock, AgentCore, or recommendation candidate gate changes. |
+| Bedrock direct provider | 조건부 | `scripts/check_bedrock_chat_smoke.py` returned `ok=true` for the active Nova default `apac.amazon.nova-micro-v1:0`. The Claude target `apac.anthropic.claude-3-5-sonnet-20241022-v2:0` returned `ResourceNotFoundException` because Anthropic use-case details have not been submitted for this AWS account. | Keep deployed chat on the approved Nova default. Submit Bedrock use-case details and re-run redacted Claude direct smoke before enabling a Claude or AgentCore runtime path. |
+| Deployed chat explanation | 완료 | `scripts/check_deployed_chat_smoke.py` returned `ok=true` after BE #306 deployed; allowed explanation returned `policy_action=ALLOW`, redirected advice request returned `policy_action=REDIRECT`, both had citation count `4`, disclaimer present, and `matched_terms=[]`. | Re-run after Lambda, IAM, Bedrock, AgentCore, or recommendation candidate gate changes. |
 | Live ingestion readiness | 조건부 | `get_ingestion_status` returned `started=0`, `succeeded=10`, `failed=0`, latest evidence count `10`; raw archive write passed. Full readiness is currently blocked because `KRX_API_KEY` is missing and provider egress timed out while NAT is disabled. | Keep scheduler disabled. For the next live provider window, add reviewed KRX credential if KRX is in scope and enable NAT through reviewed `TFVARS_JSON` before provider egress or scheduler gate checks. |
 | Ingestion scheduler | 완료 | After #275, `aws scheduler list-schedules --name-prefix stockbrief-dev-provider-ingestion` returned an empty list. | Keep disabled until the next reviewed live provider ingestion window. |
 | Ingestion ledger and evidence | 완료 | Status snapshot showed `started=0`, `succeeded=10`, `failed=0`, latest evidence count `10`. | Investigate only if future runs show stale `started` rows or failures. |
@@ -54,8 +54,17 @@ Run these from the BE repository root unless noted otherwise.
 
 ### Deployment Evidence
 
-BE #300, #301, and #302 are the current deployed BE main boundary:
+BE #300, #301, #302, #304, and #306 are the current deployed BE main boundary:
 
+- `backend-dev-deploy` run `28743421982` on commit `4fc7f20`
+  - Deployed BE #306 AgentCore citation guard and chat answer readability
+    improvements.
+  - Post-deploy recommendation quality and deployed chat smoke both returned
+    `ok=true`.
+- `backend-dev-deploy` run `28742936371` on commit `126ee45`
+  - Deployed BE #304 latest cloud completion smoke evidence.
+  - The run completed successfully and did not enable AgentCore Runtime,
+    NAT egress, or ingestion schedules.
 - `backend-dev-deploy` run `28730540713` on commit `e5d40f3`
   - Deployed BE #300 AgentCore Claude Bedrock profile preparation.
   - The run completed successfully after the runtime metadata model ID fallback
@@ -66,7 +75,8 @@ BE #300, #301, and #302 are the current deployed BE main boundary:
 - `backend-dev-deploy` run `28741696267` on commit `be31b32`
   - Deployed BE #302 recommendation candidate list gate and chat answer display
     normalization recovery.
-  - This is the latest deployed BE main evidence for the 2026-07-05 audit.
+  - This run restored the deployed recommendation candidate gate before the
+    later #304/#306 evidence refreshes.
 
 Earlier live ingestion and cost-pause deployment evidence:
 
@@ -101,7 +111,7 @@ curl -fsS -X POST "$API_BASE_URL/v1/chat" \
   --data '{"ticker":"005930","message":"왜 추천됐나요?"}'
 ```
 
-Evidence captured on 2026-07-05 after BE #302 deployed:
+Evidence captured on 2026-07-05 after BE #306 deployed:
 
 - `/v1/health`: `status=ok`, `service=stockbrief-api`, `environment=dev`
 - First post-#302 `/v1/recommendations/candidates?limit=3` smoke returned
@@ -118,7 +128,9 @@ Evidence captured on 2026-07-05 after BE #302 deployed:
   `scripts/check_deployed_chat_smoke.py`: allowed explanation returned
   `policy_action=ALLOW`; advice-like prompt returned `policy_action=REDIRECT`;
   both responses had citation count `4`, disclaimer present, and
-  `matched_terms=[]`.
+  `matched_terms=[]`. The post-#306 smoke produced redacted answer hash prefixes
+  `26948f928c1d` for the allowed explanation and `0f48ac9be7e3` for the
+  policy redirect case.
 
 Do not paste the full chat answer into PRs. The deployed smoke should summarize
 only response status, citation count, and safety policy fields.
@@ -140,10 +152,13 @@ uv run python scripts/check_bedrock_chat_smoke.py \
 Evidence captured on 2026-07-05:
 
 - Nova direct smoke: `ok=true`, model `apac.amazon.nova-micro-v1:0`,
-  answer hash prefix `246e9a43b265`, `matched_terms=[]`.
-- Claude direct smoke: `ok=true`, model
-  `apac.anthropic.claude-3-5-sonnet-20241022-v2:0`, answer hash prefix
-  `ef071a9324d2`, `matched_terms=[]`.
+  answer hash prefix `a61995047cfd`, `matched_terms=[]`.
+- Claude direct smoke: `ok=false`, model
+  `apac.anthropic.claude-3-5-sonnet-20241022-v2:0`, error
+  `ResourceNotFoundException`; AWS returned that Anthropic model use-case
+  details have not been submitted for this account.
+- `aws bedrock get-use-case-for-model-access` also returned
+  `ResourceNotFoundException` with the same missing request form condition.
 
 The helper intentionally hashes the answer and does not print the raw model
 text.
@@ -366,7 +381,7 @@ Current deploy behavior:
   - `enable_lambda_nat_egress=false`
   - `enable_ingestion_scheduler=false`
   - OpenDART and NAVER_NEWS scheduler jobs for ticker `005930`
-- `backend-dev-deploy` run `28741696267` applied the latest BE #302 package
+- `backend-dev-deploy` run `28743421982` applied the latest BE #306 package
   successfully. The deploy profile still keeps NAT and scheduler disabled.
 
 Terraform drift classification is now tied to the deploy profile source being
@@ -446,9 +461,9 @@ the current dev baseline:
 9. BE #292 verified the current full hosted auth API smoke and watchlist
    write-cycle on 2026-07-03, then deleted the temporary Cognito smoke user and
    token file.
-10. BE #300, #301, and #302 are deployed to dev. Bedrock direct smoke passes for
-    Nova and Claude, and deployed `/v1/chat` passes both allowed explanation and
-    advice-redirection smoke scenarios.
+10. BE #300, #301, #302, and #304 are deployed to dev. Nova Bedrock direct
+    smoke and deployed `/v1/chat` both pass. Claude remains gated by Bedrock
+    Anthropic use-case submission for this AWS account.
 
 Candidate next product checks after those gates:
 

@@ -157,6 +157,23 @@ def test_recommendation_candidates_bulk_loads_related_data(
     assert len(statements) <= 5
 
 
+def test_list_recommendation_candidates_does_not_require_risk_signal(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    seeded_session.execute(delete(RiskSignal).where(RiskSignal.ticker == "005930"))
+    seeded_session.commit()
+
+    response = seeded_api_client.get(
+        "/v1/recommendations/candidates",
+        params={"limit": 100},
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert any(item["ticker"] == "005930" for item in items)
+
+
 def test_list_recommendation_candidates_filters_and_limits(
     seeded_api_client: TestClient,
 ) -> None:

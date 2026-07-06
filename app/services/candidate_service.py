@@ -155,8 +155,6 @@ class CandidateService:
             )
             .where(
                 selected_scores.c.score_rank == 1,
-                RecommendationScore.is_candidate_eligible.is_(True),
-                RecommendationScore.evidence_count >= 2,
                 RecommendationScore.missing_data.is_not(None),
                 RecommendationScore.data_freshness.is_not(None),
                 RecommendationScore.data_freshness["as_of"].as_string().is_not(None),
@@ -386,7 +384,6 @@ class CandidateService:
             .join(selected_scores, selected_scores.c.score_id == RecommendationScore.id)
             .where(
                 selected_scores.c.score_rank == 1,
-                RecommendationScore.is_candidate_eligible.is_(True),
             )
         )
         if market:
@@ -395,11 +392,10 @@ class CandidateService:
             statement = statement.where(Stock.sector == sector)
 
         rows = self.session.execute(statement).all()
-        risk_pairs = self._candidate_risk_pairs(rows)
         return [
             (stock, score)
             for stock, score in rows
-            if _passes_evidence_gate(stock, score, risk_pairs)
+            if _passes_evidence_gate(score)
         ]
 
     def _selected_scores_subquery(self, score_version: str | None):
@@ -551,22 +547,6 @@ class CandidateService:
             for ticker, summary in summaries.items()
         }
 
-    def _candidate_risk_pairs(
-        self,
-        rows: list[tuple[Stock, RecommendationScore]],
-    ) -> set[tuple[str, date]]:
-        if not rows:
-            return set()
-        tickers = [stock.ticker for stock, _ in rows]
-        as_of_dates = [score.as_of_date for _, score in rows]
-        risks = self.session.execute(
-            select(RiskSignal.ticker, RiskSignal.as_of_date).where(
-                RiskSignal.ticker.in_(tickers),
-                RiskSignal.as_of_date.in_(as_of_dates),
-            )
-        ).all()
-        return {(ticker, as_of_date) for ticker, as_of_date in risks}
-
     def _candidate_risk_counts(
         self,
         rows: list[tuple[Stock, RecommendationScore]],
@@ -714,18 +694,12 @@ def _sort_candidates(
     )
 
 
-def _passes_evidence_gate(
-    stock: Stock,
-    score: RecommendationScore,
-    risk_signals: set[tuple[str, date]],
-) -> bool:
-    if score.evidence_count < 2:
-        return False
+def _passes_evidence_gate(score: RecommendationScore) -> bool:
     if not isinstance(score.missing_data, list):
         return False
     if not isinstance(score.data_freshness, dict) or not score.data_freshness.get("as_of"):
         return False
-    return (stock.ticker, score.as_of_date) in risk_signals
+    return True
 
 
 def _score_components(components: list[dict[str, object]]) -> list[ScoreComponentResponse]:

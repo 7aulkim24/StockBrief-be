@@ -70,6 +70,18 @@ def test_stock_search_returns_seeded_stocks(seeded_api_client: TestClient) -> No
     assert data["items"][0]["match_reason"] in {"name", "ticker", "keyword", "default"}
 
 
+def test_stock_search_matches_spaced_and_english_names(seeded_api_client: TestClient) -> None:
+    spaced_response = seeded_api_client.get("/v1/stocks/search", params={"q": "삼성 전자"})
+    english_response = seeded_api_client.get("/v1/stocks/search", params={"q": "Samsung"})
+
+    assert spaced_response.status_code == 200
+    assert english_response.status_code == 200
+    spaced_items = spaced_response.json()["data"]["items"]
+    english_items = english_response.json()["data"]["items"]
+    assert any(item["ticker"] == "005930" for item in spaced_items)
+    assert any(item["ticker"] == "005930" for item in english_items)
+
+
 def test_stock_search_escapes_like_wildcards(seeded_api_client: TestClient) -> None:
     response = seeded_api_client.get("/v1/stocks/search", params={"q": "%"})
 
@@ -91,6 +103,25 @@ def test_stock_detail_returns_identifiers(seeded_api_client: TestClient) -> None
     assert data["stock"]["corp_code"] == "00126380"
     assert {"stock", "price", "score", "brief", "evidence_preview"}.issubset(data)
     assert {"total", "grade", "as_of", "version", "breakdown"}.issubset(data["score"])
+
+
+def test_stock_detail_returns_basic_data_when_score_is_missing(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    seeded_session.execute(
+        delete(RecommendationScore).where(RecommendationScore.ticker == "005930")
+    )
+    seeded_session.commit()
+
+    response = seeded_api_client.get("/v1/stocks/005930")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["stock"]["ticker"] == "005930"
+    assert data["score"]["version"] == "unscored"
+    assert data["score"]["grade"] == "확인 필요"
+    assert data["brief"]["summary"] == "삼성전자는 아직 추천 후보 점수가 산정되지 않았습니다."
 
 
 def test_stock_candidates_respect_risk_profile_sorting(
@@ -493,6 +524,61 @@ def test_price_evidence_has_source_identifier_when_url_is_missing(
     assert price_items[0]["source_name"] == "KRX"
     assert price_items[0]["metadata"]["source_identifier"]
     assert price_items[0]["metadata"]["data_status"] == "available"
+
+
+def test_score_evidence_excludes_mock_financial_and_price_rows(
+    seeded_api_client: TestClient,
+    seeded_session: Session,
+) -> None:
+    mock_source = SourceDocument(
+        ticker="005930",
+        source_type="financial",
+        source_name="OpenDART_MOCK",
+        source_url=None,
+        external_id="mock-disclosure-005930",
+        title="mock financial source",
+        fetched_at=datetime(2027, 1, 1, tzinfo=timezone.utc),
+    )
+    seeded_session.add(mock_source)
+    seeded_session.flush()
+    seeded_session.add(
+        FinancialStatement(
+            ticker="005930",
+            fiscal_year=2027,
+            fiscal_period="Q1",
+            period_end_date=datetime(2027, 3, 31, tzinfo=timezone.utc).date(),
+            revenue=Decimal("100"),
+            operating_income=Decimal("10"),
+            net_income=Decimal("8"),
+            total_assets=Decimal("200"),
+            total_liabilities=Decimal("80"),
+            total_equity=Decimal("120"),
+            source_document_id=mock_source.id,
+        )
+    )
+    seeded_session.add(
+        PriceMetric(
+            ticker="005930",
+            trade_date=datetime(2027, 3, 31, tzinfo=timezone.utc).date(),
+            close_price=Decimal("100"),
+            volume=Decimal("100"),
+            trading_value=Decimal("10000"),
+            market_cap=Decimal("100000"),
+            source="KRX_FALLBACK_MOCK",
+        )
+    )
+    seeded_session.commit()
+
+    response = seeded_api_client.get(
+        "/v1/stocks/005930/evidence",
+        params={"source_type": "SCORE", "limit": 100},
+    )
+
+    assert response.status_code == 200
+    flattened = _flatten_text(response.json())
+    assert "OpenDART_MOCK" not in flattened
+    assert "KRX_FALLBACK_MOCK" not in flattened
+    assert "mock-disclosure-005930" not in flattened
 
 
 def test_stock_evidence_empty_result_has_clear_message(

@@ -34,6 +34,7 @@ from app.services.ingestion import (
     NoopPayloadArchiver,
     ProviderIngestionRequest,
     ProviderIngestionService,
+    _opendart_financial_years,
     build_request_hash,
     build_run_id,
     check_raw_archive_write,
@@ -144,6 +145,11 @@ def test_build_request_hash_uses_provider_ticker_source_date_and_request_params(
         source_date="2026-06-18",
         request_params={"page_count": 10},
     )
+
+
+def test_opendart_financial_years_waits_until_q2_for_latest_fy() -> None:
+    assert _opendart_financial_years("2026-03-31") == [2024, 2023]
+    assert _opendart_financial_years("2026-04-01") == [2025, 2024]
 
 
 def test_provider_ingestion_request_normalizes_event_fields() -> None:
@@ -1038,6 +1044,103 @@ def test_provider_fallback_marks_partial_failed_without_persisting_rows(
         "skipped": 1,
     }
     assert result["results"][0]["error_summary"]["code"] == "provider_fallback"
+
+
+def test_opendart_financial_fallback_marks_partial_failed(
+    monkeypatch,
+    seeded_session: Session,
+) -> None:
+    def fake_list_disclosures(
+        self,
+        *,
+        ticker: str,
+        corp_code=None,
+        page_count: int = 10,
+        bgn_de=None,
+        end_de=None,
+    ):
+        return ExternalApiResult(
+            provider=OPENDART_PROVIDER,
+            endpoint="/list.json",
+            cache_key=f"disclosures:{ticker}:available",
+            data_status="available",
+            status_code=200,
+            payload={
+                "ticker": ticker,
+                "list": [
+                    {
+                        "rcept_no": "202606180099",
+                        "report_nm": "주요사항보고서",
+                        "rcept_dt": "20260618",
+                    }
+                ],
+            },
+        )
+
+    def fake_list_financial_statements(
+        self,
+        *,
+        ticker: str,
+        corp_code=None,
+        business_years: list[int],
+        report_code: str = "11011",
+    ):
+        return ExternalApiResult(
+            provider=OPENDART_PROVIDER,
+            endpoint="/fnlttSinglAcntAll.json",
+            cache_key=f"financials:{ticker}:fallback",
+            data_status="fallback",
+            status_code=200,
+            payload={"ticker": ticker, "financial_statements": []},
+            missing_data=[
+                {
+                    "provider": OPENDART_PROVIDER,
+                    "field": "financial_statements",
+                    "reason": "no_financial_statement_rows",
+                }
+            ],
+        )
+
+    monkeypatch.setattr(
+        "app.services.ingestion.OpenDartClient.list_disclosures",
+        fake_list_disclosures,
+    )
+    monkeypatch.setattr(
+        "app.services.ingestion.OpenDartClient.list_financial_statements",
+        fake_list_financial_statements,
+    )
+    service = ProviderIngestionService(
+        seeded_session,
+        settings=Settings(OPENDART_API_KEY="test-key"),
+        archiver=NoopPayloadArchiver(),
+    )
+
+    result = service.run_provider_batch(
+        ProviderIngestionRequest(
+            provider=OPENDART_PROVIDER,
+            tickers=["005930"],
+            source_date="2026-06-18",
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["results"][0]["status"] == "partial_failed"
+    assert result["results"][0]["result_counts"] == {
+        "inserted": 1,
+        "updated": 0,
+        "skipped": 0,
+    }
+    assert (
+        result["results"][0]["error_summary"]["code"]
+        == "opendart_partial_provider_fallback"
+    )
+    assert result["results"][0]["error_summary"]["missing_data"] == [
+        {
+            "provider": OPENDART_PROVIDER,
+            "field": "financial_statements",
+            "reason": "no_financial_statement_rows",
+        }
+    ]
 
 
 def test_krx_ingestion_uses_short_code_when_isu_cd_is_isin(

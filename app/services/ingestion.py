@@ -279,6 +279,18 @@ class ProviderIngestionService:
                     },
                 )
             elif (
+                request.provider == OPENDART_PROVIDER
+                and external_result.missing_data
+            ):
+                completed = self.idempotency.mark_partial_failed(
+                    run=run,
+                    result_counts=result_counts,
+                    error_summary={
+                        "code": "opendart_partial_provider_fallback",
+                        "missing_data": external_result.missing_data,
+                    },
+                )
+            elif (
                 request.provider == KRX_PROVIDER
                 and result_counts["inserted"] + result_counts["updated"] == 0
             ):
@@ -1644,9 +1656,12 @@ def _combined_opendart_result(
 
 def _opendart_financial_years(source_date: str) -> list[int]:
     compact = _compact_source_date(source_date)
-    year = int(compact[:4]) if len(compact) >= 4 and compact[:4].isdigit() else date.today().year
-    last_completed_year = year - 1
-    return [last_completed_year, last_completed_year - 1]
+    as_of = _parse_yyyymmdd(compact)
+    source_day = as_of.date() if as_of is not None else date.today()
+    latest_available_year = source_day.year - 1
+    if source_day.month <= 3:
+        latest_available_year -= 1
+    return [latest_available_year, latest_available_year - 1]
 
 
 def _opendart_disclosure_window(source_date: str) -> dict[str, str]:

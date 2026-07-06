@@ -17,12 +17,13 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import Settings
-from app.models import ChatResponse
-from app.services.chat.composer import compose_chat_answer
+from app.models import ChatCitation, ChatResponse
+from app.services.chat.composer import compose_chat_answer, contains_hidden_reasoning
 from app.services.chat.providers import (
     ChatProviderInput,
     ChatProviderUnavailable,
     OutputGuardResult,
+    _cited_evidence_ids,
     _elapsed_ms,
     _evaluate_prohibited_output,
     _extract_bedrock_text,
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 MIN_AGENTCORE_TIMEOUT_SECONDS = 1.0
 MAX_AGENTCORE_TIMEOUT_SECONDS = 30.0
+MAX_AGENTCORE_RUNTIME_ATTEMPTS = 2
 
 
 class AgentCoreChatProvider:
@@ -106,6 +108,14 @@ class AgentCoreChatProvider:
             raise ChatProviderUnavailable(
                 "AgentCore chat provider returned an empty answer."
             )
+        if contains_hidden_reasoning(answer):
+            _log_agentcore_guard_failure(
+                reason="hidden_reasoning",
+                started_at=started_at,
+                answer=answer,
+                trace=trace,
+            )
+            return baseline
         guard_result = _evaluate_prohibited_output(answer)
         if guard_result.blocked:
             _log_agentcore_guard_failure(
@@ -120,9 +130,14 @@ class AgentCoreChatProvider:
                 "AgentCore chat provider returned an unsafe answer."
             )
         try:
+            answer_citations = _agentcore_answer_citations(
+                answer=answer,
+                evidence=request.evidence,
+                fallback=baseline.citations,
+            )
             _validate_answer_citations(
                 answer=answer,
-                allowed_evidence_ids=set(baseline.used_evidence_ids),
+                allowed_evidence_ids={citation.evidence_id for citation in answer_citations},
             )
         except ChatProviderUnavailable as exc:
             _log_agentcore_guard_failure(
@@ -146,9 +161,9 @@ class AgentCoreChatProvider:
         )
         return ChatResponse(
             answer=answer,
-            citations=baseline.citations,
+            citations=answer_citations,
             policy_status=baseline.policy_status,
-            used_evidence_ids=baseline.used_evidence_ids,
+            used_evidence_ids=[citation.evidence_id for citation in answer_citations],
         )
 
     def _validate_configuration(self, *, started_at: float) -> None:
@@ -177,11 +192,23 @@ class AgentCoreChatProvider:
             )
 
     def _invoke_runtime(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if self.runtime_invoker is not None:
-            return self.runtime_invoker(payload)
-        if self.runtime_url:
-            return self._invoke_http_runtime(payload)
-        return self._invoke_aws_runtime(payload)
+        for attempt in range(1, MAX_AGENTCORE_RUNTIME_ATTEMPTS + 1):
+            try:
+                if self.runtime_invoker is not None:
+                    return self.runtime_invoker(payload)
+                if self.runtime_url:
+                    return self._invoke_http_runtime(payload)
+                return self._invoke_aws_runtime(payload)
+            except ChatProviderUnavailable:
+                if attempt >= MAX_AGENTCORE_RUNTIME_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "agentcore_chat_provider_runtime_retry provider=agentcore attempt=%s max_attempts=%s reason=runtime_request_failed",
+                    attempt,
+                    MAX_AGENTCORE_RUNTIME_ATTEMPTS,
+                )
+                time.sleep(0.2)
+        raise ChatProviderUnavailable("AgentCore chat provider request failed.")
 
     def _invoke_http_runtime(self, payload: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -254,6 +281,31 @@ def _agentcore_runtime_payload(
 def _agentcore_runtime_session_id(payload: dict[str, Any]) -> str:
     ticker = str(payload.get("input", {}).get("ticker", "stockbrief"))
     return f"stockbrief-{ticker}-{uuid.uuid4().hex}"
+
+
+def _agentcore_answer_citations(
+    *,
+    answer: str,
+    evidence: list[Any],
+    fallback: list[ChatCitation],
+) -> list[ChatCitation]:
+    cited_ids = _cited_evidence_ids(answer)
+    if not cited_ids:
+        return fallback
+    selected = [
+        ChatCitation(
+            evidence_id=item.id,
+            type=item.type,
+            title=item.title,
+            source_name=item.source_name,
+            source_url=item.source_url,
+            published_at=item.published_at,
+            as_of_date=item.as_of_date,
+        )
+        for item in evidence
+        if item.id in cited_ids
+    ]
+    return selected or fallback
 
 
 def _extract_agentcore_answer(response: dict[str, Any]) -> str:

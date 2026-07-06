@@ -67,8 +67,17 @@ class CandidateService:
             sector=sector,
             score_version=score_version,
         )
+        risk_counts = (
+            {}
+            if risk_profile == "aggressive"
+            else self._candidate_risk_counts(rows)
+        )
+        rows = _sort_candidate_rows(
+            rows=rows,
+            risk_profile=risk_profile,
+            risk_counts=risk_counts,
+        )[:limit]
         candidates = self._candidate_responses(rows)
-        candidates = _sort_candidates(candidates, risk_profile)[:limit]
         return RecommendationCandidateListResponse(
             items=candidates,
             count=len(candidates),
@@ -679,17 +688,28 @@ def _sort_stock_candidate_contract_items(
     )
 
 
-def _sort_candidates(
-    candidates: list[RecommendationCandidateResponse],
+def _sort_candidate_rows(
+    *,
+    rows: list[tuple[Stock, RecommendationScore]],
     risk_profile: RiskProfile,
-) -> list[RecommendationCandidateResponse]:
+    risk_counts: dict[tuple[str, date], int],
+) -> list[tuple[Stock, RecommendationScore]]:
     if risk_profile == "conservative":
-        return sorted(candidates, key=lambda item: (len(item.risk_tags), -item.recommendation_score))
+        return sorted(
+            rows,
+            key=lambda row: (
+                risk_counts.get((row[0].ticker, row[1].as_of_date), 0),
+                -row[1].total_score,
+            ),
+        )
     if risk_profile == "aggressive":
-        return sorted(candidates, key=lambda item: item.recommendation_score, reverse=True)
+        return sorted(rows, key=lambda row: row[1].total_score, reverse=True)
     return sorted(
-        candidates,
-        key=lambda item: item.recommendation_score - len(item.risk_tags) * 0.5,
+        rows,
+        key=lambda row: (
+            row[1].total_score
+            - risk_counts.get((row[0].ticker, row[1].as_of_date), 0) * Decimal("0.5")
+        ),
         reverse=True,
     )
 

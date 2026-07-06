@@ -913,7 +913,9 @@ def test_chat_normalizes_markdown_links_before_return(
             return baseline.model_copy(
                 update={
                     "answer": (
-                        f"1. **재무 안정성** [{evidence_id}](https://example.com/news?ref=naver)\n"
+                        "1. **재무 안정성** [공시](https://example.com/report)를 확인했습니다.\n"
+                        "추가로 [근거 자료](https://example.com/source)도 확인했습니다.\n"
+                        f"근거 [{evidence_id}](https://example.com/news?ref=naver)\n"
                         "https://example.com/raw"
                     )
                 }
@@ -933,7 +935,104 @@ def test_chat_normalizes_markdown_links_before_return(
     answer = response.json()["data"]["answer"]
     assert "**" not in answer
     assert "https://" not in answer
-    assert "[ev_" in answer
+    assert "공시를 확인했습니다" in answer
+    assert "근거 자료도 확인했습니다" in answer
+    assert "[ev_" not in answer
+    assert "ev_" not in answer
+
+
+def test_chat_removes_reference_id_brackets_before_return(
+    seeded_api_client: TestClient,
+    monkeypatch,
+) -> None:
+    class ReferenceProvider:
+        name = "mock"
+
+        def compose(self, request):
+            baseline = compose_chat_answer(
+                message=request.message,
+                candidate=request.candidate,
+                evidence=request.evidence,
+            )
+            evidence_id = baseline.used_evidence_ids[0]
+            return baseline.model_copy(
+                update={
+                    "answer": (
+                        "[추천 이유 1] "
+                        "재무 안정성 항목에서 공개 데이터 기준 검토 포인트가 확인됩니다. "
+                        f"[추천 이유 ID: rsn_005930_sample][증거 ID: {evidence_id}]] "
+                        "[증거 요약: 삼성전자 관련 뉴스] [추가 증거 참조: 여러 증거 ID들]\n"
+                        "수익성 항목에서 공개 데이터 기준 검토 포인트가 확인됩니다. , [2\n"
+                        "추천 점수는 53.1점입니다. ()"
+                    )
+                }
+            )
+
+    monkeypatch.setattr(
+        "app.routes.chat.chat_provider_for",
+        lambda *args, **kwargs: ReferenceProvider(),
+    )
+
+    response = seeded_api_client.post(
+        "/v1/chat",
+        json={"ticker": "005930", "message": "왜 추천됐나요?"},
+    )
+
+    assert response.status_code == 200
+    answer = response.json()["data"]["answer"]
+    assert "추천 이유 ID" not in answer
+    assert "증거 ID" not in answer
+    assert "증거 요약" not in answer
+    assert "추가 증거" not in answer
+    assert "추천 이유 1" not in answer
+    assert "[ev_" not in answer
+    assert "]" not in answer
+    assert "[2" not in answer
+    assert "()" not in answer
+    assert ", ," not in answer
+
+
+def test_chat_falls_back_when_normalized_answer_keeps_artifacts(
+    seeded_api_client: TestClient,
+    monkeypatch,
+) -> None:
+    class ArtifactProvider:
+        name = "mock"
+
+        def compose(self, request):
+            baseline = compose_chat_answer(
+                message=request.message,
+                candidate=request.candidate,
+                evidence=request.evidence,
+            )
+            return baseline.model_copy(
+                update={
+                    "answer": (
+                        "재무 안정성 항목에서 공개 데이터 기준 검토 포인트가 확인되었습니다. "
+                        ", ] 에 대한 증거가 있습니다.\n"
+                        "뉴스 관심도 항목에서 공개 데이터 기준 검토 포인트가 확인되었습니다. "
+                        ", ,... 등 여러 증거"
+                    )
+                }
+            )
+
+    monkeypatch.setattr(
+        "app.routes.chat.chat_provider_for",
+        lambda *args, **kwargs: ArtifactProvider(),
+    )
+
+    response = seeded_api_client.post(
+        "/v1/chat",
+        json={"ticker": "005930", "message": "왜 추천됐나요?"},
+    )
+
+    assert response.status_code == 200
+    answer = response.json()["data"]["answer"]
+    assert "추천 후보 점수" in answer
+    assert "에 대한 증거가 있습니다" not in answer
+    assert "등 여러 증거" not in answer
+    assert ", ," not in answer
+    assert "]" not in answer
 
 
 def test_chat_provider_factory_failure_returns_fail_closed_response(

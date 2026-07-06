@@ -20,7 +20,11 @@ from app.orm import ChatMessage, ChatSession, User
 from app.routes.common import COMMON_ERROR_RESPONSES, request_id
 from app.services.candidate_service import CandidateService
 from app.services.chat import ChatProviderInput, ChatProviderUnavailable, chat_provider_for
-from app.services.chat.composer import normalize_chat_answer
+from app.services.chat.composer import (
+    compose_chat_answer,
+    has_chat_answer_artifacts,
+    normalize_chat_answer,
+)
 from app.services.evidence_service import EvidenceService, contract_source_type
 
 router = APIRouter()
@@ -54,9 +58,18 @@ def chat(
                 evidence=evidence,
             )
         )
-        response = response.model_copy(
-            update={"answer": normalize_chat_answer(response.answer)}
-        )
+        normalized_answer = normalize_chat_answer(response.answer)
+        if has_chat_answer_artifacts(normalized_answer):
+            fallback_response = compose_chat_answer(
+                message=request.message,
+                candidate=candidate,
+                evidence=evidence,
+            )
+            response = fallback_response.model_copy(
+                update={"answer": normalize_chat_answer(fallback_response.answer)}
+            )
+        else:
+            response = response.model_copy(update={"answer": normalized_answer})
     except ChatProviderUnavailable as exc:
         raise HTTPException(
             status_code=503,

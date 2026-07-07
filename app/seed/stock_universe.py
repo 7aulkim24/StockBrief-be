@@ -318,3 +318,8 @@ STOCK_UNIVERSE = [
         corp_code="01350869",
     ),
 ]
+
+MAJOR_STOCK_TICKERS = [
+    item.ticker
+    for item in STOCK_UNIVERSE[:20]
+]

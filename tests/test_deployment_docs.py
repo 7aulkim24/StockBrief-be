@@ -7,6 +7,28 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+MAJOR_STOCK_TICKERS = [
+    "005930",
+    "000660",
+    "035420",
+    "035720",
+    "051910",
+    "006400",
+    "068270",
+    "005380",
+    "000270",
+    "012330",
+    "373220",
+    "207940",
+    "105560",
+    "055550",
+    "086790",
+    "034730",
+    "096770",
+    "003670",
+    "005490",
+    "066570",
+]
 
 SECRET_ENV_KEYS = {
     "DATABASE_URL",
@@ -801,13 +823,18 @@ def test_dev_tfvars_pause_nat_and_scheduler_but_keep_reviewed_jobs() -> None:
     assert dev_tfvars["ingestion_schedule_jobs"] == [
         {
             "provider": "OpenDART",
-            "tickers": ["005930"],
+            "tickers": MAJOR_STOCK_TICKERS,
             "schedule_expression": "cron(0 18 ? * MON-FRI *)",
         },
         {
             "provider": "NAVER_NEWS",
-            "tickers": ["005930"],
+            "tickers": MAJOR_STOCK_TICKERS,
             "schedule_expression": "cron(5 18 ? * MON-FRI *)",
+        },
+        {
+            "provider": "KRX",
+            "tickers": MAJOR_STOCK_TICKERS,
+            "schedule_expression": "cron(10 18 ? * MON-FRI *)",
         },
     ]
 

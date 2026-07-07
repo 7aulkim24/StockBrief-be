@@ -198,12 +198,19 @@ aws lambda invoke \
   --region ap-northeast-2
 ```
 
+For the reviewed Tier A precompute set, keep each provider batch at the
+operational limit of 20 tickers:
+
+```json
+["005930","000660","035420","035720","051910","006400","068270","005380","000270","012330","373220","207940","105560","055550","086790","034730","096770","003670","005490","066570"]
+```
+
 OpenDART refresh:
 
 ```bash
 aws lambda invoke \
   --function-name stockbrief-dev-api \
-  --payload '{"stockbrief_operation":"refresh_score_snapshots","provider":"OpenDART","tickers":["005930"],"source_date":"YYYY-MM-DD"}' \
+  --payload '{"stockbrief_operation":"refresh_score_snapshots","provider":"OpenDART","tickers":["005930","000660","035420","035720","051910","006400","068270","005380","000270","012330","373220","207940","105560","055550","086790","034730","096770","003670","005490","066570"],"source_date":"YYYY-MM-DD"}' \
   --cli-binary-format raw-in-base64-out \
   /tmp/stockbrief-opendart-refresh-response.json \
   --profile stockbrief-dev \
@@ -232,7 +239,7 @@ NAVER news refresh:
 ```bash
 aws lambda invoke \
   --function-name stockbrief-dev-api \
-  --payload '{"stockbrief_operation":"refresh_score_snapshots","provider":"NAVER_NEWS","tickers":["005930"],"source_date":"YYYY-MM-DD"}' \
+  --payload '{"stockbrief_operation":"refresh_score_snapshots","provider":"NAVER_NEWS","tickers":["005930","000660","035420","035720","051910","006400","068270","005380","000270","012330","373220","207940","105560","055550","086790","034730","096770","003670","005490","066570"],"source_date":"YYYY-MM-DD"}' \
   --cli-binary-format raw-in-base64-out \
   /tmp/stockbrief-naver-refresh-response.json \
   --profile stockbrief-dev \
@@ -249,7 +256,7 @@ daily endpoints come from the workspace KRX API specs under
 ```bash
 aws lambda invoke \
   --function-name stockbrief-dev-api \
-  --payload '{"stockbrief_operation":"refresh_score_snapshots","provider":"KRX","tickers":["005930"],"source_date":"YYYY-MM-DD"}' \
+  --payload '{"stockbrief_operation":"refresh_score_snapshots","provider":"KRX","tickers":["005930","000660","035420","035720","051910","006400","068270","005380","000270","012330","373220","207940","105560","055550","086790","034730","096770","003670","005490","066570"],"source_date":"YYYY-MM-DD"}' \
   --cli-binary-format raw-in-base64-out \
   /tmp/stockbrief-krx-refresh-response.json \
   --profile stockbrief-dev \

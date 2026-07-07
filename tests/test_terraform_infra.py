@@ -4,6 +4,28 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 TERRAFORM_ROOT = REPOSITORY_ROOT / "infra/terraform"
+MAJOR_STOCK_TICKERS = [
+    "005930",
+    "000660",
+    "035420",
+    "035720",
+    "051910",
+    "006400",
+    "068270",
+    "005380",
+    "000270",
+    "012330",
+    "373220",
+    "207940",
+    "105560",
+    "055550",
+    "086790",
+    "034730",
+    "096770",
+    "003670",
+    "005490",
+    "066570",
+]
 
 
 def _read(path: str) -> str:
@@ -177,13 +199,18 @@ def test_dev_scheduler_preserves_reviewed_reactivation_inputs_while_paused() -> 
     assert deploy_tfvars["ingestion_schedule_jobs"] == [
         {
             "provider": "OpenDART",
-            "tickers": ["005930"],
+            "tickers": MAJOR_STOCK_TICKERS,
             "schedule_expression": "cron(0 18 ? * MON-FRI *)",
         },
         {
             "provider": "NAVER_NEWS",
-            "tickers": ["005930"],
+            "tickers": MAJOR_STOCK_TICKERS,
             "schedule_expression": "cron(5 18 ? * MON-FRI *)",
+        },
+        {
+            "provider": "KRX",
+            "tickers": MAJOR_STOCK_TICKERS,
+            "schedule_expression": "cron(10 18 ? * MON-FRI *)",
         },
     ]
     assert "reviewed NAT subnet IDs in tfvars" in terraform_readme
@@ -417,8 +444,12 @@ def test_ingestion_pipeline_resources_are_wired_with_scheduler_disabled_by_defau
     assert [job["provider"] for job in deploy_tfvars["ingestion_schedule_jobs"]] == [
         "OpenDART",
         "NAVER_NEWS",
+        "KRX",
     ]
-    assert all(job["tickers"] == ["005930"] for job in deploy_tfvars["ingestion_schedule_jobs"])
+    assert all(
+        job["tickers"] == MAJOR_STOCK_TICKERS
+        for job in deploy_tfvars["ingestion_schedule_jobs"]
+    )
 
 
 def test_lambda_nat_egress_is_toggleable_and_disabled_by_default() -> None:

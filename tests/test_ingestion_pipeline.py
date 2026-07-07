@@ -34,6 +34,7 @@ from app.services.ingestion import (
     NoopPayloadArchiver,
     ProviderIngestionRequest,
     ProviderIngestionService,
+    _financial_statement_values,
     _opendart_financial_years,
     build_request_hash,
     build_run_id,
@@ -506,6 +507,28 @@ def test_opendart_ingestion_upserts_financial_statements_for_score_inputs(
     assert "profitability.inputs" not in score.missing_data
     assert "growth.inputs" not in score.missing_data
     assert "valuation.inputs" not in score.missing_data
+
+
+def test_financial_statement_values_accepts_common_opendart_account_aliases() -> None:
+    values = _financial_statement_values(
+        [
+            {"account_nm": "보험수익", "thstrm_amount": "123"},
+            {"account_nm": "영업손익", "thstrm_amount": "-45"},
+            {"account_nm": "당기순손익", "thstrm_amount": "-6"},
+            {"account_nm": "자산 합계", "thstrm_amount": "1000"},
+            {"account_nm": "부채 합계", "thstrm_amount": "400"},
+            {"account_nm": "자본총계", "thstrm_amount": "600"},
+        ]
+    )
+
+    assert values == {
+        "revenue": Decimal("123"),
+        "operating_income": Decimal("-45"),
+        "net_income": Decimal("-6"),
+        "total_assets": Decimal("1000"),
+        "total_liabilities": Decimal("400"),
+        "total_equity": Decimal("600"),
+    }
 
 
 def test_evidence_chunk_upsert_recovers_from_concurrent_insert_conflict(

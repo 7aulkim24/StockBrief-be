@@ -1689,15 +1689,20 @@ def _financial_statement_values(rows: list[dict[str, Any]]) -> dict[str, Decimal
         amount = _decimal_from_provider(row, "thstrm_amount", "thstrm_add_amount")
         if amount is None:
             continue
-        if account_name in {"매출액", "수익매출액", "영업수익"}:
+        if account_name in {"매출액", "수익매출액", "영업수익", "보험수익", "이자수익"}:
             values.setdefault("revenue", amount)
-        elif account_name in {"영업이익", "영업이익손실"}:
+        elif account_name in {"영업이익", "영업이익손실", "영업손익"}:
             values.setdefault("operating_income", amount)
-        elif account_name in {"당기순이익", "당기순이익손실", "연결당기순이익"}:
+        elif account_name in {
+            "당기순이익",
+            "당기순이익손실",
+            "당기순손익",
+            "연결당기순이익",
+        }:
             values.setdefault("net_income", amount)
-        elif account_name == "자산총계":
+        elif account_name in {"자산총계", "자산합계"}:
             values.setdefault("total_assets", amount)
-        elif account_name == "부채총계":
+        elif account_name in {"부채총계", "부채합계"}:
             values.setdefault("total_liabilities", amount)
         elif account_name == "자본총계":
             values.setdefault("total_equity", amount)

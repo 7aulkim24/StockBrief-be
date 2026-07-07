@@ -665,41 +665,6 @@ def _score_grade(score: float) -> str:
     return "D"
 
 
-def _sort_stock_candidate_contract_items(
-    *,
-    items: list[StockCandidateContractItem],
-    sort: str,
-    risk_profile: RiskProfile,
-    risk_counts: dict[tuple[str, date], int],
-) -> list[StockCandidateContractItem]:
-    if sort == "volume_desc":
-        return sorted(
-            items,
-            key=lambda item: item.price.volume if item.price and item.price.volume else 0,
-            reverse=True,
-        )
-    if sort == "updated_desc":
-        return sorted(items, key=lambda item: item.score.as_of, reverse=True)
-    if risk_profile == "conservative":
-        return sorted(
-            items,
-            key=lambda item: (
-                risk_counts.get((item.ticker, item.score.as_of), 0),
-                -item.score.total,
-            ),
-        )
-    if risk_profile == "aggressive":
-        return sorted(items, key=lambda item: item.score.total, reverse=True)
-    return sorted(
-        items,
-        key=lambda item: (
-            item.score.total
-            - risk_counts.get((item.ticker, item.score.as_of), 0) * 0.5
-        ),
-        reverse=True,
-    )
-
-
 def _sort_candidate_rows(
     *,
     rows: list[tuple[Stock, RecommendationScore]],

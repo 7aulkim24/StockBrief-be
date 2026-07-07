@@ -47,6 +47,12 @@ from app.services.recommendation.materializer import materialize_recommendation_
 
 
 logger = logging.getLogger(__name__)
+
+
+class UnregisteredTickerError(ValueError):
+    """Raised when an ingestion run targets a ticker missing from the stock universe."""
+
+
 SUPPORTED_PROVIDERS = (OPENDART_PROVIDER, NAVER_PROVIDER, KRX_PROVIDER)
 MAX_TICKERS_PER_BATCH = 20
 MAX_OPENDART_PAGE_COUNT = 100
@@ -341,6 +347,12 @@ class ProviderIngestionService:
         ticker: str,
     ) -> ExternalApiResult:
         stock = self.session.get(Stock, ticker)
+        if stock is None:
+            # Fail before any provider call: guessing market/company_name for
+            # an unknown ticker produced silent skips that were untraceable.
+            raise UnregisteredTickerError(
+                f"ticker {ticker} is not registered in the stock universe"
+            )
         if request.provider == OPENDART_PROVIDER:
             client = OpenDartClient(settings=self.settings, session=self.session)
             disclosure_window = _opendart_disclosure_window(request.source_date)
@@ -359,12 +371,11 @@ class ProviderIngestionService:
             return KrxClient(settings=self.settings, session=self.session).daily_trading(
                 ticker=ticker,
                 base_date=_compact_source_date(request.source_date),
-                market=stock.market if stock else "KOSPI",
+                market=stock.market,
             )
-        company_name = stock.company_name if stock else ticker
         return NaverNewsClient(settings=self.settings, session=self.session).search_news(
             ticker=ticker,
-            company_name=company_name,
+            company_name=stock.company_name,
             display=request.news_display,
         )
 
@@ -623,7 +634,9 @@ class ProviderIngestionService:
                 touched = True
         self.session.flush()
         if touched:
-            _refresh_krx_technical_metrics(self.session, ticker=ticker)
+            skip_reason = _refresh_krx_technical_metrics(self.session, ticker=ticker)
+            if skip_reason is not None:
+                counts["technical_metrics_skipped"] = 1
             self.session.flush()
         return counts
 
@@ -848,7 +861,12 @@ def _upsert_krx_price_metric_from_item(
     _refresh_krx_technical_metrics(session, normalized["ticker"])
 
 
-def _refresh_krx_technical_metrics(session: Session, ticker: str) -> None:
+def _refresh_krx_technical_metrics(session: Session, ticker: str) -> str | None:
+    """Refresh momentum/volatility for the latest row.
+
+    Returns a skip reason instead of failing silently so callers can surface
+    why a ticker has no technical metrics (early listings, data gaps).
+    """
     rows = session.scalars(
         select(PriceMetric)
         .where(PriceMetric.ticker == ticker)
@@ -856,11 +874,21 @@ def _refresh_krx_technical_metrics(session: Session, ticker: str) -> None:
         .limit(21)
     ).all()
     if len(rows) < 21:
-        return
+        logger.info(
+            "krx technical metrics skipped: ticker=%s reason=insufficient_samples "
+            "sample_count=%d required=21",
+            ticker,
+            len(rows),
+        )
+        return "insufficient_samples"
     ordered = list(reversed(rows))
     maybe_closes = [_decimal_to_float(row.close_price) for row in ordered]
     if any(value is None or value <= 0 for value in maybe_closes):
-        return
+        logger.warning(
+            "krx technical metrics skipped: ticker=%s reason=non_positive_close",
+            ticker,
+        )
+        return "non_positive_close"
     closes = [value for value in maybe_closes if value is not None]
 
     latest = ordered[-1]
@@ -876,6 +904,7 @@ def _refresh_krx_technical_metrics(session: Session, ticker: str) -> None:
     latest.volatility_20d = Decimal(
         str(round(_sample_stddev(daily_returns) * math.sqrt(252), 6))
     )
+    return None
 
 
 def _sample_stddev(values: list[float]) -> float:
@@ -1684,6 +1713,7 @@ def _opendart_disclosure_window(source_date: str) -> dict[str, str]:
 
 def _financial_statement_values(rows: list[dict[str, Any]]) -> dict[str, Decimal]:
     values: dict[str, Decimal] = {}
+    unmapped: set[str] = set()
     for row in rows:
         account_name = _normalize_account_name(row.get("account_nm"))
         amount = _decimal_from_provider(row, "thstrm_amount", "thstrm_add_amount")
@@ -1701,6 +1731,14 @@ def _financial_statement_values(rows: list[dict[str, Any]]) -> dict[str, Decimal
             values.setdefault("total_liabilities", amount)
         elif account_name == "자본총계":
             values.setdefault("total_equity", amount)
+        else:
+            unmapped.add(account_name)
+    if unmapped:
+        # Account naming varies by issuer; surface what fell through so data
+        # quality gaps are diagnosable instead of silently missing columns.
+        logger.debug(
+            "unmapped financial statement accounts: %s", sorted(unmapped)
+        )
     return values
 
 

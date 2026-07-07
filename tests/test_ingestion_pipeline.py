@@ -1196,6 +1196,9 @@ def test_krx_ingestion_uses_short_code_when_isu_cd_is_isin(
         "inserted": 1,
         "updated": 0,
         "skipped": 0,
+        # Fewer than 21 price rows exist for this ticker, so the technical
+        # metrics refresh reports an observable skip instead of silence.
+        "technical_metrics_skipped": 1,
     }
 
     price = seeded_session.scalars(
@@ -2352,3 +2355,162 @@ def test_check_ingestion_scheduler_enable_gate_passes_when_all_checks_pass(monke
     assert result["providers"] == [OPENDART_PROVIDER, NAVER_PROVIDER, KRX_PROVIDER]
     assert result["tickers"] == ["005930"]
     assert result["blockers"] == []
+
+
+def _krx_price_result(ticker: str, trade_date: datetime, close: str) -> ExternalApiResult:
+    return ExternalApiResult(
+        provider=KRX_PROVIDER,
+        endpoint="/daily",
+        cache_key=f"krx:{ticker}:{trade_date:%Y%m%d}:{close}",
+        data_status="available",
+        status_code=200,
+        payload={
+            "base_date": trade_date.strftime("%Y%m%d"),
+            "OutBlock_1": [
+                {
+                    "BAS_DD": trade_date.strftime("%Y%m%d"),
+                    "ISU_SRT_CD": ticker,
+                    "TDD_CLSPRC": close,
+                    "ACC_TRDVOL": "1,000",
+                    "ACC_TRDVAL": "100,000",
+                    "MKTCAP": "1,000,000,000",
+                }
+            ],
+        },
+    )
+
+
+def test_krx_technical_metrics_skip_is_observable_when_samples_insufficient(
+    seeded_session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    seeded_session.query(PriceMetric).filter(PriceMetric.ticker == "456789").delete()
+    seeded_session.query(Stock).filter(Stock.ticker == "456789").delete()
+    seeded_session.add(
+        Stock(
+            ticker="456789",
+            company_name="표본부족",
+            market="KOSPI",
+            is_active=True,
+        )
+    )
+    seeded_session.commit()
+    service = ProviderIngestionService(seeded_session)
+
+    with caplog.at_level(logging.INFO, logger="app.services.ingestion"):
+        counts = service._persist_krx_prices(
+            ticker="456789",
+            result=_krx_price_result("456789", datetime(2026, 6, 1, tzinfo=timezone.utc), "100"),
+            raw_archive_uri=None,
+        )
+
+    assert counts["inserted"] == 1
+    assert counts["technical_metrics_skipped"] == 1
+    assert "insufficient_samples" in caplog.text
+    assert "456789" in caplog.text
+
+
+def test_krx_technical_metrics_skip_is_observable_when_close_non_positive(
+    seeded_session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    seeded_session.query(PriceMetric).filter(PriceMetric.ticker == "567890").delete()
+    seeded_session.query(Stock).filter(Stock.ticker == "567890").delete()
+    seeded_session.add(
+        Stock(
+            ticker="567890",
+            company_name="이상종가",
+            market="KOSPI",
+            is_active=True,
+        )
+    )
+    seeded_session.commit()
+    service = ProviderIngestionService(seeded_session)
+
+    for offset in range(20):
+        trade_date = datetime(2026, 6, 1, tzinfo=timezone.utc) + timedelta(days=offset)
+        service._persist_krx_prices(
+            ticker="567890",
+            result=_krx_price_result("567890", trade_date, str(100 + offset)),
+            raw_archive_uri=None,
+        )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.ingestion"):
+        counts = service._persist_krx_prices(
+            ticker="567890",
+            result=_krx_price_result(
+                "567890", datetime(2026, 6, 21, tzinfo=timezone.utc), "0"
+            ),
+            raw_archive_uri=None,
+        )
+
+    assert counts["technical_metrics_skipped"] == 1
+    assert "non_positive_close" in caplog.text
+    assert "567890" in caplog.text
+
+    latest = seeded_session.scalars(
+        select(PriceMetric)
+        .where(PriceMetric.ticker == "567890")
+        .order_by(PriceMetric.trade_date.desc())
+    ).first()
+    assert latest is not None
+    assert latest.momentum_20d is None
+
+
+def test_unregistered_ticker_fails_before_provider_fetch(
+    monkeypatch,
+    seeded_session: Session,
+) -> None:
+    fetch_calls: list[str] = []
+
+    def fake_search_news(self, *, ticker: str, company_name: str, display: int = 10):
+        fetch_calls.append(ticker)
+        return ExternalApiResult(
+            provider=NAVER_PROVIDER,
+            endpoint="/v1/search/news.json",
+            cache_key=f"news:{ticker}",
+            data_status="available",
+            status_code=200,
+            payload={"items": []},
+        )
+
+    monkeypatch.setattr(
+        "app.services.ingestion.NaverNewsClient.search_news",
+        fake_search_news,
+    )
+    service = ProviderIngestionService(
+        seeded_session,
+        settings=Settings(NAVER_CLIENT_ID="id", NAVER_CLIENT_SECRET="secret"),
+        archiver=NoopPayloadArchiver(),
+    )
+
+    result = service.run_provider_batch(
+        ProviderIngestionRequest(
+            provider=NAVER_PROVIDER,
+            tickers=["999999"],
+            source_date="2026-06-18",
+        )
+    )
+
+    assert result["ok"] is False
+    item = result["results"][0]
+    assert item["status"] == "failed"
+    assert item["error_summary"]["code"] == "UnregisteredTickerError"
+    assert "999999" in item["error_summary"]["message"]
+    assert fetch_calls == []
+
+
+def test_financial_statement_values_logs_unmapped_accounts(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    rows = [
+        {"account_nm": "매출액", "thstrm_amount": "2000"},
+        {"account_nm": "지배기업소유주지분당기순이익", "thstrm_amount": "1000"},
+    ]
+
+    with caplog.at_level(logging.DEBUG, logger="app.services.ingestion"):
+        values = ingestion_module._financial_statement_values(rows)
+
+    assert values == {"revenue": Decimal("2000")}
+    assert "unmapped financial statement accounts" in caplog.text
+    assert "지배기업소유주지분당기순이익" in caplog.text

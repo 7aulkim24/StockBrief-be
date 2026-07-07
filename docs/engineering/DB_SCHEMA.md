@@ -419,6 +419,9 @@ Stores user and assistant chat messages with safety metadata.
 - Index `chat_messages(session_id)` for authenticated chat session detail reads.
 - Index `ingestion_runs(job_type, provider, status)`.
 - Index `ingestion_runs(started_at)`.
+- Index `news_items(ticker, published_at)` for evidence and candidate summary
+  lookups filtered by ticker and ordered/aggregated by published_at.
+- Index `disclosures(ticker, published_at)` for the same access pattern.
 
 ## 5. Recommendation Score JSON Example
 

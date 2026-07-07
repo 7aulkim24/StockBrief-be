@@ -1,3 +1,5 @@
+import uuid
+from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 
@@ -77,10 +79,13 @@ class EvidenceService:
             .where(FinancialStatement.ticker == ticker)
             .order_by(FinancialStatement.period_end_date.desc())
         ).all()
+        sources_by_id = self._source_documents_by_id(
+            row.source_document_id for row in financials if row.source_document_id
+        )
         items = []
         for row in financials:
             source = (
-                self.session.get(SourceDocument, row.source_document_id)
+                sources_by_id.get(row.source_document_id)
                 if row.source_document_id
                 else None
             )
@@ -105,6 +110,17 @@ class EvidenceService:
                 )
             )
         return items
+
+    def _source_documents_by_id(
+        self, source_document_ids: Iterable[uuid.UUID]
+    ) -> dict[uuid.UUID, SourceDocument]:
+        unique_ids = set(source_document_ids)
+        if not unique_ids:
+            return {}
+        rows = self.session.scalars(
+            select(SourceDocument).where(SourceDocument.id.in_(unique_ids))
+        ).all()
+        return {row.id: row for row in rows}
 
     def _chunk_evidence(
         self,

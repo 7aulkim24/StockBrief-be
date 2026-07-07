@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -18,6 +18,7 @@ from app.orm import (
     SourceDocument,
 )
 from app.services.candidate_service import CandidateService
+from app.services.evidence_service import EvidenceService
 
 
 PROHIBITED_KOREAN_TERMS = [
@@ -579,6 +580,77 @@ def test_score_evidence_excludes_mock_financial_and_price_rows(
     assert "OpenDART_MOCK" not in flattened
     assert "KRX_FALLBACK_MOCK" not in flattened
     assert "mock-disclosure-005930" not in flattened
+
+
+def test_financial_evidence_bulk_loads_source_documents(
+    seeded_session: Session,
+) -> None:
+    ticker = "005930"
+    extra_sources = []
+    for index in range(4):
+        source = SourceDocument(
+            ticker=ticker,
+            source_type="disclosure",
+            source_name="OpenDART",
+            source_url=f"https://dart.fss.or.kr/extra-financial-{index}",
+            external_id=f"opendart-extra-financial-{ticker}-{index}",
+            title=f"{ticker} extra financial disclosure {index}",
+            published_at=datetime(2026, 1, index + 1, tzinfo=timezone.utc),
+            fetched_at=datetime(2026, 1, index + 1, tzinfo=timezone.utc),
+            content_hash=f"extra-financial-{ticker}-{index}",
+            raw_content="{}",
+            metadata_={"fixture": "financial_evidence_n_plus_one_guard"},
+        )
+        seeded_session.add(source)
+        seeded_session.flush()
+        extra_sources.append(source)
+        seeded_session.add(
+            FinancialStatement(
+                ticker=ticker,
+                fiscal_year=2020 + index,
+                fiscal_period="Q1",
+                period_end_date=date(2020 + index, 3, 31),
+                revenue=Decimal("100"),
+                operating_income=Decimal("10"),
+                net_income=Decimal("8"),
+                total_assets=Decimal("200"),
+                total_liabilities=Decimal("80"),
+                total_equity=Decimal("120"),
+                source_document_id=source.id,
+            )
+        )
+    seeded_session.commit()
+
+    service = EvidenceService(seeded_session)
+
+    engine = seeded_session.get_bind()
+    statements: list[str] = []
+
+    def count_statement(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count_statement)
+    try:
+        items = service._financial_evidence(ticker)
+    finally:
+        event.remove(engine, "before_cursor_execute", count_statement)
+
+    # One SELECT for financial_statements, one bulk SELECT for source_documents
+    # (via IN (...)) — never one source_documents SELECT per row.
+    select_statements = [
+        statement for statement in statements if "source_documents" in statement
+    ]
+    assert len(select_statements) == 1
+    assert "IN (" in select_statements[0].upper() or "= ANY" in select_statements[0].upper()
+
+    items_by_id = {item.id: item for item in items}
+    for index, source in enumerate(extra_sources):
+        item = items_by_id[f"financial_{ticker}_{2020 + index}_Q1"]
+        assert item.source_name == source.source_name
+        assert item.source_url == source.source_url
+        assert item.source_identifier == source.external_id
+        assert item.published_at == source.published_at
 
 
 def test_stock_evidence_empty_result_has_clear_message(

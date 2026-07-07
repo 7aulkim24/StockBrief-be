@@ -202,7 +202,10 @@ class FinancialStatement(Base):
 
 class Disclosure(Base):
     __tablename__ = "disclosures"
-    __table_args__ = (UniqueConstraint("provider", "receipt_no", name="uq_disclosures_provider_receipt_no"),)
+    __table_args__ = (
+        UniqueConstraint("provider", "receipt_no", name="uq_disclosures_provider_receipt_no"),
+        Index("ix_disclosures_ticker_published_at", "ticker", "published_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid_pk)
     ticker: Mapped[str] = mapped_column(ForeignKey("stocks.ticker"), nullable=False)
@@ -219,7 +222,10 @@ class Disclosure(Base):
 
 class NewsItem(Base):
     __tablename__ = "news_items"
-    __table_args__ = (UniqueConstraint("source_url", name="uq_news_items_source_url"),)
+    __table_args__ = (
+        UniqueConstraint("source_url", name="uq_news_items_source_url"),
+        Index("ix_news_items_ticker_published_at", "ticker", "published_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid_pk)
     ticker: Mapped[str] = mapped_column(ForeignKey("stocks.ticker"), nullable=False)

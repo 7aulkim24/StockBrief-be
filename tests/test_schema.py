@@ -9,7 +9,9 @@ from app.orm import (
     Base,
     ChatMessage,
     CompanyIdentifier,
+    Disclosure,
     IngestionRun,
+    NewsItem,
     RecommendationScore,
     User,
     Watchlist,
@@ -129,6 +131,44 @@ def test_chat_message_session_lookup_plan_uses_session_id_index() -> None:
 
     plan_text = " ".join(str(column) for row in plan for column in row)
     assert "ix_chat_messages_session_id" in plan_text
+
+
+def test_news_items_and_disclosures_ticker_published_at_indexes_are_declared() -> None:
+    news_indexes = {index.name for index in NewsItem.__table__.indexes}
+    disclosure_indexes = {index.name for index in Disclosure.__table__.indexes}
+
+    assert "ix_news_items_ticker_published_at" in news_indexes
+    assert "ix_disclosures_ticker_published_at" in disclosure_indexes
+
+
+def test_create_all_builds_news_and_disclosure_ticker_published_at_indexes() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    inspector = inspect(engine)
+    news_indexes = {index["name"] for index in inspector.get_indexes("news_items")}
+    disclosure_indexes = {index["name"] for index in inspector.get_indexes("disclosures")}
+
+    assert "ix_news_items_ticker_published_at" in news_indexes
+    assert "ix_disclosures_ticker_published_at" in disclosure_indexes
+
+
+def test_news_disclosure_index_migration_is_declared() -> None:
+    migration = (
+        API_ROOT
+        / "migrations/versions/0006_news_disclosure_ticker_published_at_index.py"
+    ).read_text()
+
+    assert "ix_news_items_ticker_published_at" in migration
+    assert "ix_disclosures_ticker_published_at" in migration
+    assert '"news_items"' in migration
+    assert '"disclosures"' in migration
+    assert 'context.dialect.name == "postgresql"' in migration
+    assert "context.autocommit_block()" in migration
+    assert "postgresql_concurrently=True" in migration
+    assert (
+        'down_revision: str | None = "0005_chat_messages_session_id_index"' in migration
+    )
 
 
 def test_ingestion_runs_migration_creates_table() -> None:

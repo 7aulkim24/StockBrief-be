@@ -4,7 +4,7 @@ from decimal import Decimal
 import logging
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -533,40 +533,41 @@ class CandidateService:
     ) -> dict[str, CandidateEvidenceSummaryContract]:
         if not tickers:
             return {}
-        summaries: dict[str, dict[str, object]] = {
-            ticker: {"news": 0, "disclosure": 0, "latest": None}
-            for ticker in tickers
-        }
+        evidence_published_at = func.coalesce(
+            EvidenceChunk.published_at, SourceDocument.published_at
+        )
         rows = self.session.execute(
-            select(EvidenceChunk, SourceDocument)
+            select(
+                EvidenceChunk.ticker,
+                func.sum(
+                    case((SourceDocument.source_type == "news", 1), else_=0)
+                ).label("news_count"),
+                func.sum(
+                    case((SourceDocument.source_type == "disclosure", 1), else_=0)
+                ).label("disclosure_count"),
+                func.max(evidence_published_at).label("latest_at"),
+            )
             .join(SourceDocument, SourceDocument.id == EvidenceChunk.source_document_id)
             .where(
                 EvidenceChunk.ticker.in_(tickers),
                 SourceDocument.source_type.in_(["news", "disclosure"]),
                 ~EvidenceChunk.evidence_id.startswith("ev_mock_", autoescape=True),
             )
+            .group_by(EvidenceChunk.ticker)
         ).all()
-        for chunk, source in rows:
-            summary = summaries.setdefault(
-                chunk.ticker,
-                {"news": 0, "disclosure": 0, "latest": None},
-            )
-            if source.source_type == "news":
-                summary["news"] = int(summary["news"]) + 1
-            elif source.source_type == "disclosure":
-                summary["disclosure"] = int(summary["disclosure"]) + 1
-            latest = summary["latest"]
-            published_at = chunk.published_at or source.published_at
-            if published_at is not None and (latest is None or published_at > latest):
-                summary["latest"] = published_at
-        return {
+        summaries = {
             ticker: CandidateEvidenceSummaryContract(
-                news_count=int(summary["news"]),
-                disclosure_count=int(summary["disclosure"]),
-                latest_at=summary["latest"],
+                news_count=0, disclosure_count=0, latest_at=None
             )
-            for ticker, summary in summaries.items()
+            for ticker in tickers
         }
+        for ticker, news_count, disclosure_count, latest_at in rows:
+            summaries[ticker] = CandidateEvidenceSummaryContract(
+                news_count=int(news_count or 0),
+                disclosure_count=int(disclosure_count or 0),
+                latest_at=latest_at,
+            )
+        return summaries
 
     def _candidate_risk_counts(
         self,

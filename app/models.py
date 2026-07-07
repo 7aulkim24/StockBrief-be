@@ -267,6 +267,13 @@ class RecommendationCandidateListResponse(BaseModel):
     disclaimer: str
 
 
+class RecommendationCandidateContractResponse(BaseModel):
+    success: Literal[True] = True
+    data: RecommendationCandidateResponse
+    message: str
+    request_id: str
+
+
 class StockScoreResponse(BaseModel):
     ticker: str
     as_of_date: date

@@ -129,6 +129,45 @@ def test_chat_response_schema_required_fields_snapshot(
     }
 
 
+def test_stock_candidate_detail_uses_enveloped_contract_response(
+    seeded_api_client: TestClient,
+) -> None:
+    response = seeded_api_client.get("/v1/openapi.json")
+
+    assert response.status_code == 200
+    paths = response.json()["paths"]
+    assert (
+        "RecommendationCandidateContractResponse"
+        in paths["/v1/stocks/candidates/{ticker}"]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]["$ref"]
+    )
+    schemas = response.json()["components"]["schemas"]
+    contract_schema = schemas["RecommendationCandidateContractResponse"]
+    assert set(contract_schema["properties"]) >= {"success", "data", "message", "request_id"}
+
+
+def test_legacy_recommendation_endpoints_stay_on_raw_response_models(
+    seeded_api_client: TestClient,
+) -> None:
+    response = seeded_api_client.get("/v1/openapi.json")
+
+    assert response.status_code == 200
+    paths = response.json()["paths"]
+    assert (
+        "RecommendationCandidateListResponse"
+        in paths["/v1/recommendations/candidates"]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]["$ref"]
+    )
+    assert (
+        "RecommendationCandidateResponse"
+        in paths["/v1/recommendations/candidates/{ticker}"]["get"]["responses"]["200"][
+            "content"
+        ]["application/json"]["schema"]["$ref"]
+    )
+
+
 def test_current_public_score_contract_excludes_future_materializer_fields(
     seeded_api_client: TestClient,
 ) -> None:

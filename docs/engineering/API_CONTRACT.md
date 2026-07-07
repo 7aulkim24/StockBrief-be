@@ -93,6 +93,54 @@ compatibility:
 
 New frontend work should prefer the public endpoints in the table above.
 
+### 3.1 Envelope migration status (`/recommendations/*`)
+
+`GET /v1/recommendations/candidates` and
+`GET /v1/recommendations/candidates/{ticker}` intentionally return their raw
+`RecommendationCandidateListResponse` / `RecommendationCandidateResponse`
+bodies (no `success`/`data`/`message`/`request_id` envelope). This is a
+deliberate exception, not an oversight:
+
+- `StockBrief-fe/src/lib/api.ts` (`getRecommendationCandidates`,
+  `getRecommendationCandidate`) calls its internal `request<T>()` helper,
+  which returns `response.json()` directly as the typed payload. It does not
+  unwrap a `data` field. Wrapping these endpoints in the standard envelope
+  would silently break the frontend until it migrates its client to read
+  `response.data`.
+- `scripts/check_recommendation_quality_smoke.py`'s `check_candidate_detail`
+  reads fields (`ticker`, `evidence_count`, `risk_tags`, ...) directly off the
+  top-level response payload, not off `payload["data"]`.
+
+Until the frontend and smoke scripts are updated to consume the enveloped
+shape, these two legacy paths stay frozen on their raw response models
+(pinned by
+`tests/test_recommendation_api.py::test_legacy_recommendation_endpoints_keep_raw_response_shape`
+and
+`tests/test_api_contract_snapshot.py::test_legacy_recommendation_endpoints_stay_on_raw_response_models`).
+
+`GET /v1/stocks/candidates/{ticker}` (the `/stocks/*` equivalent of the
+legacy detail endpoint) has been converted to the standard envelope in this
+change, since it has no frontend or smoke-script consumers today. It now
+returns `RecommendationCandidateContractResponse`:
+
+```json
+{
+  "success": true,
+  "data": { "...": "RecommendationCandidateResponse fields" },
+  "message": "추천 후보 상세를 반환했습니다.",
+  "request_id": "req_..."
+}
+```
+
+**Migration plan for a future PR:** once `StockBrief-fe/src/lib/api.ts` is
+updated to unwrap `response.data` for `getRecommendationCandidates` /
+`getRecommendationCandidate`, and
+`scripts/check_recommendation_quality_smoke.py::check_candidate_detail` is
+updated to read `response_payload(payload)` (the same helper
+`check_candidate_list` already uses), `/v1/recommendations/candidates` and
+`/v1/recommendations/candidates/{ticker}` can be converted to the standard
+envelope in the same way.
+
 Score-backed candidate and score endpoints use stored materialized scores.
 The current public baseline stores `factor-rank-2026-06-30` in public
 `score.version` fields.
@@ -227,6 +275,37 @@ Response `data`:
     "total": 30,
     "has_more": true
   }
+}
+```
+
+### 6.1 GET /stocks/candidates/{ticker}
+
+Returns the same candidate detail as the legacy
+`GET /recommendations/candidates/{ticker}`, wrapped in the standard envelope.
+Response `data` is a `RecommendationCandidateResponse` (see
+`RECOMMENDATION_CANDIDATE_REQUIRED_FIELDS` in
+`tests/test_api_contract_snapshot.py` for the required field set):
+
+```json
+{
+  "success": true,
+  "data": {
+    "ticker": "005930",
+    "name": "삼성전자",
+    "market": "KOSPI",
+    "sector": "반도체",
+    "recommendation_score": 78.5,
+    "score_components": [ "... 8 components ..." ],
+    "recommendation_reasons": [ "..." ],
+    "risk_tags": [ "..." ],
+    "evidence_level": "strong",
+    "evidence_count": 4,
+    "missing_data": [],
+    "data_freshness": { "as_of": "2026-06-09" },
+    "disclaimer": "공개 데이터 기반 검토 후보이며 최종 투자 판단은 사용자에게 있습니다."
+  },
+  "message": "추천 후보 상세를 반환했습니다.",
+  "request_id": "req_..."
 }
 ```
 

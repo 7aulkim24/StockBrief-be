@@ -260,6 +260,50 @@ def test_get_recommendation_candidate_detail(
     assert candidate["risk_tags"]
 
 
+def test_legacy_recommendation_endpoints_keep_raw_response_shape(
+    seeded_api_client: TestClient,
+) -> None:
+    """/recommendations/candidates* are frozen to their raw (non-enveloped)
+    response shape because the StockBrief-fe `request<T>()` client reads
+    `response.json()` directly as the typed payload (see
+    StockBrief-fe/src/lib/api.ts getRecommendationCandidates /
+    getRecommendationCandidate) and
+    scripts/check_recommendation_quality_smoke.py's check_candidate_detail
+    reads fields directly off the top-level payload. Wrapping these in the
+    standard success/data/message/request_id envelope would break both
+    consumers. New work should use /v1/stocks/candidates* instead, which is
+    already enveloped.
+    """
+    list_response = seeded_api_client.get("/v1/recommendations/candidates")
+    detail_response = seeded_api_client.get("/v1/recommendations/candidates/005930")
+
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert "success" not in list_payload
+    assert "data" not in list_payload
+    assert {"items", "count", "risk_profile", "disclaimer"}.issubset(list_payload)
+
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert "success" not in detail_payload
+    assert "data" not in detail_payload
+    _assert_candidate_shape(detail_payload)
+
+
+def test_stock_candidate_detail_uses_standard_envelope(
+    seeded_api_client: TestClient,
+) -> None:
+    response = seeded_api_client.get("/v1/stocks/candidates/005930")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["message"]
+    assert payload["request_id"].startswith("req_")
+    _assert_candidate_shape(payload["data"])
+    assert payload["data"]["ticker"] == "005930"
+
+
 def test_candidate_api_defaults_to_current_score_version(
     seeded_api_client: TestClient,
     seeded_session: Session,

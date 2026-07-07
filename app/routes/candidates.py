@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db_session
 from app.models import (
+    RecommendationCandidateContractResponse,
     RecommendationCandidateListResponse,
     RecommendationCandidateResponse,
     RiskProfile,
@@ -79,14 +80,20 @@ def list_stock_candidates(
 
 @router.get(
     "/stocks/candidates/{ticker}",
-    response_model=RecommendationCandidateResponse,
+    response_model=RecommendationCandidateContractResponse,
     responses=COMMON_ERROR_RESPONSES,
 )
 def get_stock_candidate(
     ticker: str,
+    request: Request,
     session: Session = Depends(get_db_session),
-) -> RecommendationCandidateResponse:
-    return CandidateService(session).get_recommendation_candidate(ticker)
+) -> RecommendationCandidateContractResponse:
+    candidate = CandidateService(session).get_recommendation_candidate(ticker)
+    return RecommendationCandidateContractResponse(
+        data=candidate,
+        message="추천 후보 상세를 반환했습니다.",
+        request_id=request_id(request),
+    )
 
 
 @router.get(

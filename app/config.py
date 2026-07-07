@@ -1,8 +1,16 @@
+import math
 from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Chat provider bounds validated both at app boot (fail fast) and at request
+# time (fail closed). test_config_validation pins these against the provider
+# module constants so the two layers cannot drift apart.
+BEDROCK_MAX_TOKENS_RANGE = (64, 1200)
+BEDROCK_TIMEOUT_SECONDS_RANGE = (1.0, 30.0)
+AGENTCORE_TIMEOUT_SECONDS_RANGE = (1.0, 30.0)
 
 
 class Settings(BaseSettings):
@@ -76,6 +84,63 @@ class Settings(BaseSettings):
             for origin in self.cors_allowed_origins.split(",")
             if origin.strip()
         ]
+
+
+def validate_startup_settings(settings: Settings) -> None:
+    """Fail fast at app boot when the chat provider is misconfigured.
+
+    Settings construction itself never raises — request-time handlers rely on
+    constructing invalid settings to exercise the fail-closed 503 path. This
+    check runs once in create_app so a broken deployment is caught at cold
+    start instead of on the first chat request.
+    """
+    problems: list[str] = []
+
+    if settings.chat_provider == "bedrock":
+        # Providers strip these values before checking, so whitespace-only
+        # strings are effectively missing — mirror that here.
+        if not settings.bedrock_chat_model_id.strip():
+            problems.append("chat_provider=bedrock requires BEDROCK_CHAT_MODEL_ID")
+        min_tokens, max_tokens = BEDROCK_MAX_TOKENS_RANGE
+        if not min_tokens <= settings.bedrock_chat_max_tokens <= max_tokens:
+            problems.append(
+                f"BEDROCK_CHAT_MAX_TOKENS must be between {min_tokens} and {max_tokens}"
+            )
+        if not (
+            math.isfinite(settings.bedrock_chat_temperature)
+            and 0.0 <= settings.bedrock_chat_temperature <= 1.0
+        ):
+            problems.append("BEDROCK_CHAT_TEMPERATURE must be between 0.0 and 1.0")
+        min_timeout, max_timeout = BEDROCK_TIMEOUT_SECONDS_RANGE
+        if not (
+            math.isfinite(settings.bedrock_chat_timeout_seconds)
+            and min_timeout <= settings.bedrock_chat_timeout_seconds <= max_timeout
+        ):
+            problems.append(
+                f"BEDROCK_CHAT_TIMEOUT_SECONDS must be between {min_timeout:g} and {max_timeout:g}"
+            )
+
+    if settings.chat_provider == "agentcore":
+        if (
+            not settings.agentcore_runtime_url.strip()
+            and not settings.agentcore_runtime_arn.strip()
+        ):
+            problems.append(
+                "chat_provider=agentcore requires AGENTCORE_RUNTIME_URL or AGENTCORE_RUNTIME_ARN"
+            )
+        min_timeout, max_timeout = AGENTCORE_TIMEOUT_SECONDS_RANGE
+        if not (
+            math.isfinite(settings.agentcore_runtime_timeout_seconds)
+            and min_timeout
+            <= settings.agentcore_runtime_timeout_seconds
+            <= max_timeout
+        ):
+            problems.append(
+                f"AGENTCORE_RUNTIME_TIMEOUT_SECONDS must be between {min_timeout:g} and {max_timeout:g}"
+            )
+
+    if problems:
+        raise ValueError("invalid startup configuration: " + "; ".join(problems))
 
 
 @lru_cache

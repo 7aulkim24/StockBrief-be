@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.config import Settings, get_settings
+from app.config import Settings, get_settings, validate_startup_settings
 from app.models import ApiErrorResponse, ErrorDetail
 from app.protected_routes import router as protected_router
 from app.routes import router
@@ -37,6 +37,7 @@ def _error_response(
 
 def create_app(settings_factory: Callable[[], Settings] = get_settings) -> FastAPI:
     settings = settings_factory()
+    validate_startup_settings(settings)
     app = FastAPI(
         title="StockBrief API",
         version=settings.service_version,

@@ -50,6 +50,18 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
+      - name: Guard workflow_run deploys against stale main
+        if: github.event_name == 'workflow_run'
+        env:
+          VALIDATED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          current_main_sha="$(git rev-parse origin/main)"
+          if [ "${VALIDATED_SHA}" != "${current_main_sha}" ]; then
+            echo "::error::backend-ci validated ${VALIDATED_SHA}, but current main is ${current_main_sha}. Re-run backend-dev-deploy manually with workflow_dispatch if an older commit must be deployed."
+            exit 1
+          fi
+
       - name: Resolve deploy profile
         id: deploy-profile
         env:

@@ -335,6 +335,10 @@ def test_backend_dev_deploy_checks_assumed_account_matches_backend() -> None:
     assert "push:" not in workflow
     assert "github.event.workflow_run.conclusion == 'success'" in workflow
     assert "ref: ${{ github.event.workflow_run.head_sha || github.ref }}" in workflow
+    assert "Guard workflow_run deploys against stale main" in workflow
+    assert "git fetch --no-tags --depth=1 origin main" in workflow
+    assert "current_main_sha=\"$(git rev-parse origin/main)\"" in workflow
+    assert "backend-ci validated ${VALIDATED_SHA}, but current main is ${current_main_sha}" in workflow
     assert "github.event_name == 'workflow_run' || inputs.apply == true" in workflow
     assert "Skip Terraform apply" in workflow
     assert "Plan-only validation completed" in workflow

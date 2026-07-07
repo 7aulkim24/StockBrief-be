@@ -187,6 +187,11 @@ API Gateway, Cognito, Secrets Manager, and alarms are managed by Terraform.
    `backends/<target_env>.hcl`, plans with
    `envs/<target_env>/deploy.auto.tfvars.json`, and applies the selected stack
    for `main` commits whose `backend-ci` run succeeded.
+   For automatic `workflow_run` deploys, the workflow also verifies that the
+   validated `backend-ci` `head_sha` still matches the current `main` tip before
+   any AWS credentials are configured. Re-running an old successful CI run will
+   stop at this guard; use the existing `workflow_dispatch` path for an
+   intentional manual redeploy.
    If those profile files are not committed, the workflow creates them at
    runtime from the selected GitHub Environment variables
    `TF_BACKEND_CONFIG_HCL` and `TFVARS_JSON`.

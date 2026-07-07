@@ -5,7 +5,7 @@ It intentionally excludes toolchain migration work and FE-to-BE integration
 implementation because those were owned by other teammates.
 
 Audit date: 2026-07-05
-AWS account: `560271561793`
+AWS account: `123456789012` (placeholder — 실제 계정 ID는 GitHub Environment 변수/팀 로컬 노트 참조)
 Region: `ap-northeast-2`
 Linked issues: `#211`, `#226`, `#253`, `#255`, `#275`, `#284`, `#286`, `#290`, `#292`, `#293`, `#303`, `#305`
 
@@ -206,7 +206,7 @@ credentials.
 ```bash
 AWS_PROFILE=stockbrief-dev \
 aws sqs get-queue-attributes \
-  --queue-url "https://sqs.ap-northeast-2.amazonaws.com/560271561793/stockbrief-dev-ingestion-dlq" \
+  --queue-url "https://sqs.ap-northeast-2.amazonaws.com/123456789012/stockbrief-dev-ingestion-dlq" \
   --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed \
   --region ap-northeast-2
 

@@ -3,7 +3,7 @@
 검증일: 2026-07-05
 대상 commit: `fc9538aaed168b598e95e66332f443cc29420c48`
 대상 환경: `dev-owen`
-AWS account: `465002806203`
+AWS account: `123456789012` (placeholder — 실제 계정 ID는 팀 로컬 노트 참조)
 Region: `ap-northeast-2`
 
 이 문서는 PR #308 병합 후 `dev-owen`에 AgentCore runtime retry와 chat answer artifact cleanup을 배포한 redacted 기록이다. 원문 모델 답변, secret, token, raw provider payload는 기록하지 않는다.

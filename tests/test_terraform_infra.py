@@ -1,13 +1,39 @@
+import hashlib
 import json
+import re
 from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 TERRAFORM_ROOT = REPOSITORY_ROOT / "infra/terraform"
 
+# SHA-256 hashes of AWS account IDs that were previously leaked in this
+# repository. Stored hashed so the test itself never re-publishes a value.
+LEAKED_ACCOUNT_ID_HASHES = {
+    "769c56b44e34d1ed7a03adfab0871a4dbc6ba0e7e889185a03b9fd8ee10ad64d",
+    "cd35979f2d81955f8785b8ab1ab7794614cad0bc7c3651a5970e03a58a0fd541",
+}
+
+_ACCOUNT_ID_PATTERN = re.compile(r"(?<!\d)\d{12}(?!\d)")
+
+_STATE_BUCKET_PATTERN = re.compile(
+    r'bucket\s*=\s*"stockbrief-terraform-state-(\d{12})-ap-northeast-2"'
+)
+
+
+def _state_bucket_account(text: str) -> str | None:
+    match = _STATE_BUCKET_PATTERN.search(text)
+    return match.group(1) if match else None
+
 
 def _read(path: str) -> str:
     return (TERRAFORM_ROOT / path).read_text(encoding="utf-8")
+
+
+def _assert_no_leaked_account_ids(text: str) -> None:
+    for token in _ACCOUNT_ID_PATTERN.findall(text):
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        assert digest not in LEAKED_ACCOUNT_ID_HASHES, "leaked AWS account ID found"
 
 
 def test_multi_account_dev_profile_templates_are_available() -> None:
@@ -18,7 +44,8 @@ def test_multi_account_dev_profile_templates_are_available() -> None:
 
     assert "dev-<member>" in variables_tf
     assert 'regex("^dev-[a-z0-9][a-z0-9-]*$"' in variables_tf
-    assert 'bucket         = "stockbrief-terraform-state-560271561793-ap-northeast-2"' in dev_backend
+    # Pin the bucket naming convention without republishing the account ID.
+    assert _state_bucket_account(dev_backend) is not None
     assert 'key            = "stockbrief/dev/terraform.tfstate"' in dev_backend
     assert 'dynamodb_table = "stockbrief-terraform-locks"' in dev_backend
     assert "use_lockfile" not in dev_backend
@@ -119,12 +146,13 @@ def test_dev_backend_and_tfvars_track_current_dev_account() -> None:
     backend_tf = _read("backend.tf")
     deploy_tfvars = _read("envs/dev/deploy.auto.tfvars.json")
 
-    assert "420615923610" not in backend_tf
-    assert "420615923610" not in deploy_tfvars
-    assert "217139788460" not in backend_tf
-    assert "217139788460" not in deploy_tfvars
+    _assert_no_leaked_account_ids(backend_tf)
+    _assert_no_leaked_account_ids(deploy_tfvars)
     assert "REPLACE_WITH_ACCOUNT_ID" not in backend_tf
-    assert "stockbrief-terraform-state-560271561793-ap-northeast-2" in backend_tf
+    backend_account = _state_bucket_account(backend_tf)
+    assert backend_account is not None
+    # backend.tf and backends/dev.hcl must point at the same account's state.
+    assert backend_account == _state_bucket_account(_read("backends/dev.hcl"))
     assert "vpc-0fdabc1f990027c99" not in deploy_tfvars
     assert "subnet-08f5ab10f709efd3e" not in deploy_tfvars
     assert "subnet-0940fc5ef61437e6d" not in deploy_tfvars

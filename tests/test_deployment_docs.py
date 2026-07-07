@@ -938,10 +938,17 @@ def test_new_aws_bootstrap_uses_placeholders_for_operational_identifiers() -> No
         r"https://[a-z0-9-]+\.auth\.ap-northeast-2\.amazoncognito\.com",
         bootstrap_doc,
     )
-    assert "560271561793" not in bootstrap_doc
+    # No real AWS account IDs anywhere in the doc — pattern-based so this
+    # test never has to carry a leaked value itself. UUIDs are scrubbed
+    # first so their trailing segment is not mistaken for an account ID.
+    uuid_pattern = re.compile(
+        r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+    )
+    account_tokens = set(
+        re.findall(r"(?<!\d)\d{12}(?!\d)", uuid_pattern.sub("", bootstrap_doc))
+    )
+    assert account_tokens <= {"123456789012", "000000000000"}, account_tokens
     assert "3pgg4n3hda2pqf9q8ij9m79glk" not in bootstrap_doc
-    assert "stockbrief-terraform-state-560271561793" not in bootstrap_doc
-    assert "arn:aws:iam::560271561793:role/" not in bootstrap_doc
 
 
 def test_deployment_bootstrap_documents_nat_egress_plan_review_checklist() -> None:

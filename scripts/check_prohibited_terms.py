@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,17 +59,38 @@ DOC_POLICY_CONTEXT = (
 )
 
 # ── Infra-sensitive identifier scan ────────────────────────────────────────────
-# These identifiers must not appear in docs/ files.
-# They reveal internal AWS account structure and are a reconnaissance aid.
-INFRA_SENSITIVE_TERMS = [
-    "420615923610",  # AWS account ID
-]
+# AWS account IDs must not appear in any committed markdown file.
+# Pattern-based so the scanner never has to carry a leaked value itself,
+# and so it keeps working when the team switches AWS accounts.
+# UUIDs are scrubbed from each line first so their trailing 12-hex-digit
+# segment ("...-0000-000000000001") is not mistaken for an account ID, while
+# hyphen-embedded account IDs (e.g. state bucket names) are still caught.
+AWS_ACCOUNT_ID_PATTERN = re.compile(r"(?<!\d)\d{12}(?!\d)")
+UUID_PATTERN = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
 
-INFRA_SCAN_ROOT = Path("docs")
+# Always-allowed tokens: canonical AWS docs placeholders plus repo doc
+# sample values that happen to be 12 digits (e.g. KRW amounts).
+PLACEHOLDER_ACCOUNT_IDS = {
+    "123456789012",
+    "000000000000",
+    "888888888000",  # DB_SCHEMA.md trading_value sample (KRW)
+}
 
-# Files committed before this rule existed — exempt from the new scan.
-INFRA_DOC_ALLOWLIST = {
-    "DEPLOYMENT_BOOTSTRAP.md",
+INFRA_SCAN_ROOT = Path(".")
+INFRA_SCAN_SUFFIXES = {".md"}
+
+# Fallback walk (non-git checkouts only) still skips these.
+INFRA_SKIP_DIRS = {
+    ".git",
+    ".next",
+    ".pytest_cache",
+    ".terraform",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+    "venv",
 }
 
 
@@ -120,8 +143,9 @@ def main() -> int:
     infra_violations = scan_infra_terms()
     if infra_violations:
         print("Infra-sensitive identifier policy FAILED.")
-        print("AWS account IDs and internal resource identifiers must not appear in docs/.")
-        print("Move this content to a local-only file and add it to .gitignore.")
+        print("AWS account IDs must not appear in committed markdown files.")
+        print("Replace with the 123456789012 placeholder, or move the content")
+        print("to a local-only file covered by .gitignore.")
         for v in infra_violations:
             print(f"- {v.path}:{v.line_number}: term={v.term!r} line={v.line!r}")
         exit_code = 1
@@ -131,25 +155,62 @@ def main() -> int:
     return exit_code
 
 
+def _tracked_markdown_paths() -> list[Path] | None:
+    """Markdown files tracked by git — the policy targets committed docs only.
+
+    Returns None outside a git checkout so the caller can fall back to a
+    filesystem walk (used by scanner self-tests running in temp dirs).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z", "--", "*.md"],
+            capture_output=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [
+        Path(entry)
+        for entry in result.stdout.decode("utf-8").split("\0")
+        if entry
+    ]
+
+
+def _fallback_markdown_paths() -> list[Path]:
+    return [
+        path
+        for path in sorted(INFRA_SCAN_ROOT.rglob("*"))
+        if path.is_file()
+        and path.suffix in INFRA_SCAN_SUFFIXES
+        and not any(part in INFRA_SKIP_DIRS for part in path.parts)
+    ]
+
+
 def scan_infra_terms() -> list[InfraViolation]:
     violations: list[InfraViolation] = []
-    if not INFRA_SCAN_ROOT.exists():
-        return violations
-    for path in sorted(INFRA_SCAN_ROOT.rglob("*.md")):
-        if path.name in INFRA_DOC_ALLOWLIST:
+    paths = _tracked_markdown_paths()
+    if paths is None:
+        print("warning: not a git checkout; scanning all markdown files")
+        paths = _fallback_markdown_paths()
+    for path in sorted(paths):
+        if not path.is_file():
             continue
         lines = path.read_text(encoding="utf-8").splitlines()
         for index, line in enumerate(lines):
-            for term in INFRA_SENSITIVE_TERMS:
-                if term in line:
-                    violations.append(
-                        InfraViolation(
-                            path=path,
-                            line_number=index + 1,
-                            term=term,
-                            line=line.strip(),
-                        )
+            if "policy-scan: allow" in line:
+                continue
+            scrubbed = UUID_PATTERN.sub("", line)
+            for token in AWS_ACCOUNT_ID_PATTERN.findall(scrubbed):
+                if token in PLACEHOLDER_ACCOUNT_IDS:
+                    continue
+                violations.append(
+                    InfraViolation(
+                        path=path,
+                        line_number=index + 1,
+                        term=token,
+                        line=line.strip(),
                     )
+                )
     return violations
 
 
@@ -157,6 +218,7 @@ def iter_scanned_files() -> list[Path]:
     files: list[Path] = []
     for root in SCAN_ROOTS:
         if not root.exists():
+            print(f"warning: scan root missing, skipped: {root}")
             continue
         for path in root.rglob("*"):
             if not path.is_file():

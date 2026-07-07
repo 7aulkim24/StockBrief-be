@@ -105,7 +105,7 @@ STOCK_UNIVERSE = [
         sector="자동차",
         industry="자동차 제조업",
         listing_date=date(1973, 7, 21),
-        corp_code="00164788",
+        corp_code="00164751",
     ),
     StockUniverseItem(
         ticker="012330",
@@ -115,7 +115,7 @@ STOCK_UNIVERSE = [
         sector="자동차부품",
         industry="자동차 부품 제조업",
         listing_date=date(1989, 9, 5),
-        corp_code="00164751",
+        corp_code="00164788",
     ),
     StockUniverseItem(
         ticker="373220",

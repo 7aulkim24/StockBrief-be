@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import io
 import json
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import urlopen
+import xml.etree.ElementTree as ET
+import zipfile
+
+from sqlalchemy import select
 
 from app.config import Settings, get_settings
+from app.db import get_session_factory
+from app.orm import CompanyIdentifier
+from app.seed.stock_universe import STOCK_UNIVERSE
 from app.services.external.clients import KRX_PROVIDER, NAVER_PROVIDER, OPENDART_PROVIDER
 from app.services.external.transport import urllib_transport
 from app.services.external.types import ExternalRequest, ExternalTransport
@@ -30,6 +40,66 @@ PROVIDER_EGRESS_TIMEOUT_SECONDS = 3.0
 RAW_ARCHIVE_PROBE_PROVIDER = "STOCKBRIEF_PROBE"
 
 RAW_ARCHIVE_PROBE_TICKER = "healthcheck"
+
+def check_opendart_corp_code_alignment(
+    event: dict[str, object] | None = None,
+    *,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    request = event or {}
+    tickers = _event_tickers(request) or [item.ticker for item in STOCK_UNIVERSE]
+    base_settings = settings or get_settings()
+    hydrated_settings = hydrate_external_api_settings(base_settings)
+    if not hydrated_settings.opendart_api_key:
+        return {
+            "ok": False,
+            "error": "missing_provider_credential",
+            "field": "OPENDART_API_KEY",
+        }
+
+    actual_codes = _opendart_corp_codes_by_stock_code(hydrated_settings.opendart_api_key)
+    seed_by_ticker = {item.ticker: item for item in STOCK_UNIVERSE}
+    with get_session_factory()() as session:
+        identifier_rows = session.scalars(
+            select(CompanyIdentifier).where(
+                CompanyIdentifier.ticker.in_(tickers),
+                CompanyIdentifier.provider == OPENDART_PROVIDER,
+                CompanyIdentifier.identifier_type == "corp_code",
+            )
+        ).all()
+    db_codes = {row.ticker: row.identifier_value for row in identifier_rows}
+
+    rows = []
+    for ticker in tickers:
+        seed_item = seed_by_ticker.get(ticker)
+        actual = actual_codes.get(ticker)
+        seed_corp_code = seed_item.corp_code if seed_item else None
+        db_corp_code = db_codes.get(ticker)
+        actual_corp_code = actual["corp_code"] if actual else None
+        rows.append(
+            {
+                "ticker": ticker,
+                "seed_name": seed_item.company_name if seed_item else None,
+                "seed_corp_code": seed_corp_code,
+                "db_corp_code": db_corp_code,
+                "actual_name": actual["corp_name"] if actual else None,
+                "actual_corp_code": actual_corp_code,
+                "seed_matches": seed_corp_code == actual_corp_code,
+                "db_matches": db_corp_code == actual_corp_code,
+            }
+        )
+
+    mismatches = [
+        row
+        for row in rows
+        if not row["seed_matches"] or not row["db_matches"]
+    ]
+    return {
+        "ok": not mismatches,
+        "operation": "check_opendart_corp_code_alignment",
+        "rows": rows,
+        "mismatches": mismatches,
+    }
 
 def check_ingestion_scheduler_enable_gate(event: dict[str, object] | None = None) -> dict[str, Any]:
     request = event or {}
@@ -535,6 +605,22 @@ def hydrate_external_api_settings(settings: Settings) -> Settings:
             ),
         }
     )
+
+def _opendart_corp_codes_by_stock_code(api_key: str) -> dict[str, dict[str, str]]:
+    url = "https://opendart.fss.or.kr/api/corpCode.xml?" + urlencode({"crtfc_key": api_key})
+    with urlopen(url, timeout=30) as response:
+        archive = zipfile.ZipFile(io.BytesIO(response.read()))
+    root = ET.fromstring(archive.read(archive.namelist()[0]))
+    rows: dict[str, dict[str, str]] = {}
+    for item in root.findall("list"):
+        stock_code = (item.findtext("stock_code") or "").strip()
+        if not stock_code:
+            continue
+        rows[stock_code] = {
+            "corp_code": (item.findtext("corp_code") or "").strip(),
+            "corp_name": (item.findtext("corp_name") or "").strip(),
+        }
+    return rows
 
 def _krx_daily_endpoints_configured(settings: Settings) -> bool:
     return bool(

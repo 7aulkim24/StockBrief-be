@@ -97,6 +97,7 @@ from app.services.ingestion.readiness import (
     _scheduler_enable_gate_blockers,
     check_ingestion_readiness,
     check_ingestion_scheduler_enable_gate,
+    check_opendart_corp_code_alignment,
     check_provider_egress,
     check_raw_archive_write,
     hydrate_external_api_settings,

@@ -106,6 +106,9 @@ uv run pytest tests/test_external_adapters.py       # 외부 어댑터
 uv run python scripts/check_prohibited_terms.py
 ```
 
+의도적인 테스트/정책 예외는 `policy-scan: allow <reason>` 형식으로만
+억제합니다. 사유 없는 `policy-scan: allow` 주석은 실패로 처리됩니다.
+
 ## 구현된 엔드포인트
 
 - `GET /v1/health`

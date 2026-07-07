@@ -76,10 +76,38 @@ def test_infra_scan_allows_placeholders_uuids_and_samples(tmp_path: Path) -> Non
                 "AWS account: `123456789012`",
                 '"source_document_id": "00000000-0000-0000-0000-000000000001"',
                 "| `trading_value` | numeric | no | `888888888000` | KRW. |",
-                "suppressed: 999988887777 <!-- policy-scan: allow -->",
+                "suppressed: 999988887777 <!-- policy-scan: allow docs-example-account -->",
             ]
         )
         + "\n",
+        encoding="utf-8",
+    )
+
+    result = _run_scanner(tmp_path)
+
+    assert result.returncode == 0, result.stdout
+    assert "Infra-sensitive identifier policy passed" in result.stdout
+
+
+def test_infra_scan_rejects_allow_without_reason(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "missing-reason.md").write_text(
+        "suppressed: 999988887777 <!-- policy-scan: allow -->\n",
+        encoding="utf-8",
+    )
+
+    result = _run_scanner(tmp_path)
+
+    assert result.returncode == 1, result.stdout
+    assert "999988887777" in result.stdout
+
+
+def test_infra_scan_allows_account_id_with_reasoned_allow(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "reasoned.md").write_text(
+        "suppressed: 999988887777 <!-- policy-scan: allow docs-example-account -->\n",
         encoding="utf-8",
     )
 

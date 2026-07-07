@@ -69,6 +69,9 @@ AWS_ACCOUNT_ID_PATTERN = re.compile(r"(?<!\d)\d{12}(?!\d)")
 UUID_PATTERN = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
 )
+POLICY_SCAN_ALLOW_PATTERN = re.compile(
+    r"policy-scan:\s*allow(?:\s+(?P<reason>[A-Za-z0-9][A-Za-z0-9_.:/#-]*))?"
+)
 
 # Always-allowed tokens: canonical AWS docs placeholders plus repo doc
 # sample values that happen to be 12 digits (e.g. KRW amounts).
@@ -197,7 +200,7 @@ def scan_infra_terms() -> list[InfraViolation]:
             continue
         lines = path.read_text(encoding="utf-8").splitlines()
         for index, line in enumerate(lines):
-            if "policy-scan: allow" in line:
+            if _has_policy_scan_allow_reason(line):
                 continue
             scrubbed = UUID_PATTERN.sub("", line)
             for token in AWS_ACCOUNT_ID_PATTERN.findall(scrubbed):
@@ -233,7 +236,7 @@ def iter_scanned_files() -> list[Path]:
 
 def is_allowed(path: Path, lines: list[str], index: int) -> bool:
     line = lines[index]
-    if "policy-scan: allow" in line:
+    if _has_policy_scan_allow_reason(line):
         return True
     if path.match("app/services/chat/composer.py") and _near_policy_scan_allow(lines, index):
         return True
@@ -242,10 +245,15 @@ def is_allowed(path: Path, lines: list[str], index: int) -> bool:
     return False
 
 
+def _has_policy_scan_allow_reason(line: str) -> bool:
+    match = POLICY_SCAN_ALLOW_PATTERN.search(line)
+    return bool(match and match.group("reason"))
+
+
 def _near_policy_scan_allow(lines: list[str], index: int) -> bool:
     start = max(0, index - 6)
     end = min(len(lines), index + 2)
-    return any("policy-scan: allow" in lines[item] for item in range(start, end))
+    return any(_has_policy_scan_allow_reason(lines[item]) for item in range(start, end))
 
 
 def _is_documented_policy_context(lines: list[str], index: int) -> bool:

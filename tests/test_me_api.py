@@ -629,8 +629,19 @@ def test_chat_sessions_are_user_scoped(seeded_session: Session) -> None:
         app.dependency_overrides.clear()
 
 
-def test_authenticated_chat_persists_session_and_messages(seeded_session: Session) -> None:
+def test_authenticated_chat_persists_session_and_messages(
+    seeded_session: Session,
+    monkeypatch,
+) -> None:
     user = _auth_user(seeded_session, "cognito-sub-chat")
+    flush_snapshots: list[set[str]] = []
+    original_flush = seeded_session.flush
+
+    def recording_flush(*args, **kwargs):
+        flush_snapshots.append(
+            {item.__class__.__name__ for item in seeded_session.new}
+        )
+        return original_flush(*args, **kwargs)
 
     def override_current_user() -> User:
         return user
@@ -638,6 +649,7 @@ def test_authenticated_chat_persists_session_and_messages(seeded_session: Sessio
     def override_db_session():
         yield seeded_session
 
+    monkeypatch.setattr(seeded_session, "flush", recording_flush)
     app.dependency_overrides[get_current_user] = override_current_user
     app.dependency_overrides[get_optional_current_user] = override_current_user
     app.dependency_overrides[get_db_session] = override_db_session
@@ -653,6 +665,7 @@ def test_authenticated_chat_persists_session_and_messages(seeded_session: Sessio
         )
 
         assert response.status_code == 200
+        assert {"ChatSession"} in flush_snapshots
         payload = response.json()
         session_id = payload["data"]["session_id"]
         assert session_id

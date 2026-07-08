@@ -148,6 +148,7 @@ def _persist_chat_exchange(
             ticker=request.ticker,
         )
         session.add(chat_session)
+        session.flush()
     else:
         chat_session.ticker = request.ticker
         if request.title:

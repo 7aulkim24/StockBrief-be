@@ -1144,7 +1144,17 @@ def test_chat_says_evidence_is_insufficient_when_evidence_is_weak(
 
 def test_chat_response_does_not_emit_prohibited_korean_terms(
     seeded_api_client: TestClient,
+    seeded_session: Session,
 ) -> None:
+    evidence_chunk = seeded_session.scalars(
+        select(EvidenceChunk).where(EvidenceChunk.ticker == "005930")
+    ).first()
+    assert evidence_chunk is not None
+    evidence_chunk.chunk_text = (
+        "외국인 매도와 증권가 목표가 하향 보도가 확인됩니다."  # policy-scan: allow model-output-guard-test
+    )
+    seeded_session.commit()
+
     responses = [
         seeded_api_client.post(
             "/v1/chat",
@@ -1163,6 +1173,38 @@ def test_chat_response_does_not_emit_prohibited_korean_terms(
 
     for term in PROHIBITED_KOREAN_OUTPUT_TERMS:
         assert term not in text
+
+
+def test_chat_normalizes_empty_bullet_artifacts(
+    seeded_api_client: TestClient,
+    monkeypatch,
+) -> None:
+    class ArtifactProvider:
+        name = "mock"
+
+        def compose(self, request):
+            return compose_chat_answer(
+                message=request.message,
+                candidate=request.candidate,
+                evidence=request.evidence,
+            ).model_copy(
+                update={
+                    "answer": "요약입니다.\n-\n- \n다음 문장입니다.",
+                }
+            )
+
+    monkeypatch.setattr(
+        "app.routes.chat.chat_provider_for",
+        lambda *args, **kwargs: ArtifactProvider(),
+    )
+
+    response = seeded_api_client.post(
+        "/v1/chat",
+        json={"ticker": "005930", "message": "왜 추천됐나요?"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["answer"] == "요약입니다.\n다음 문장입니다."
 
 
 def test_chat_openapi_documents_response_model(

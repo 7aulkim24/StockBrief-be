@@ -44,6 +44,7 @@ DANGLING_REFERENCE_BRACKET_PATTERN = re.compile(r"\s*[\[\]]+\s*$")
 TRAILING_REFERENCE_PUNCTUATION_PATTERN = re.compile(r"(?:\s+[,;:])+\s*$")
 OPEN_REFERENCE_TAIL_PATTERN = re.compile(r"(?:\s+[,;:])?\s*[\[(][^\]\)]*$")
 EMPTY_PARENS_PATTERN = re.compile(r"\s*\(\s*\)")
+EMPTY_BULLET_PATTERN = re.compile(r"^\s*[-*•]\s*$")
 HIDDEN_REASONING_PATTERN = re.compile(
     r"<\s*(?:thinking|reasoning|analysis)\b[^>]*>.*?(?:<\s*/\s*(?:thinking|reasoning|analysis)\s*>|$)",
     re.IGNORECASE | re.DOTALL,
@@ -51,6 +52,14 @@ HIDDEN_REASONING_PATTERN = re.compile(
 PRESENTATION_ARTIFACT_PATTERN = re.compile(
     r"<\s*(?:thinking|reasoning|analysis)\b|[\[\]]|,\s*,|\(\s*\)|등 여러 증거|에 대한 증거가 있습니다",
     re.IGNORECASE,
+)
+OUTPUT_TERM_REPLACEMENTS = (
+    ("수익 보장", "성과 단정 회피"),  # policy-scan: allow model-output-guard
+    ("목표가", "특정 가격 지점"),  # policy-scan: allow model-output-guard
+    ("진입가", "진입 가격 지점"),  # policy-scan: allow model-output-guard
+    ("손절가", "손실 제한 가격 지점"),  # policy-scan: allow model-output-guard
+    ("매수", "거래 실행"),  # policy-scan: allow model-output-guard
+    ("매도", "거래 정리"),  # policy-scan: allow model-output-guard
 )
 
 
@@ -125,8 +134,13 @@ def normalize_chat_answer(answer: str) -> str:
     normalized = EVIDENCE_LABEL_PATTERN.sub("", normalized)
     normalized = MARKDOWN_BOLD_PATTERN.sub(r"\1", normalized)
     normalized = BARE_URL_PATTERN.sub("", normalized)
+    normalized = _neutralize_prohibited_output_terms(normalized)
     normalized = normalized.replace("[", "").replace("]", "")
-    lines = [_clean_chat_answer_line(line) for line in normalized.splitlines()]
+    lines = [
+        _clean_chat_answer_line(line)
+        for line in normalized.splitlines()
+        if not EMPTY_BULLET_PATTERN.match(line)
+    ]
     return "\n".join(lines).strip()
 
 
@@ -156,6 +170,12 @@ def _markdown_link_label(match: re.Match[str]) -> str:
 
 def _contains_any(value: str, terms: tuple[str, ...]) -> bool:
     return any(term.casefold() in value for term in terms)
+
+
+def _neutralize_prohibited_output_terms(value: str) -> str:
+    for term, replacement in OUTPUT_TERM_REPLACEMENTS:
+        value = value.replace(term, replacement)
+    return value
 
 
 def _candidate_summary(candidate: RecommendationCandidateResponse) -> str:
@@ -189,7 +209,7 @@ def _evidence_summary(
         return "근거가 부족하다: 현재 확인 가능한 근거가 제한적이므로 추가 공개 데이터 확인이 필요합니다."
 
     summaries = [
-        f"- [{item.id}] {item.type}: {item.summary}"
+        f"- [{item.id}] {item.type}: {_neutralize_prohibited_output_terms(item.summary)}"
         for item in evidence[:4]
     ]
     return "연결된 근거 요약입니다.\n" + "\n".join(summaries)
